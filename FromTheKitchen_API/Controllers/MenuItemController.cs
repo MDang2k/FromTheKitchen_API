@@ -42,6 +42,14 @@ namespace FromTheKitchen_API.Controllers
             }
 
             MenuItem? menuItem = _context.MenuItems.FirstOrDefault(u => u.Id == id);
+            if (menuItem == null)
+            {
+                _response.StatusCode = HttpStatusCode.NotFound;
+                _response.IsSuccess = false;
+                _response.ErrorMessages.Add("Menu item not found");
+                return NotFound(_response);
+            }
+
             _response.Result = menuItem;
             _response.StatusCode = HttpStatusCode.OK;
             return Ok(_response);

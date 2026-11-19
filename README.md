@@ -97,6 +97,11 @@ FromTheKitchen_API/
     ├── Migrations/             # EF Core migrations (Identity, menu, seed, orders, ratings)
     ├── Utility/SD.cs           # Role names and order status constants
     └── wwwroot/images/         # Menu item images
+└── FromTheKitchen_API.Tests/
+    ├── Infrastructure/ApiFactory.cs  # Runs the real API in memory on SQLite
+    ├── AuthTests.cs                  # Register, login, JWT, admin rules
+    ├── MenuItemTests.cs              # Public menu, admin-only changes, image upload
+    └── OrderTests.cs                 # Ownership, status workflow, ratings
 ```
 
 ## Running locally
@@ -120,10 +125,37 @@ FromTheKitchen_API/
 5. Open `https://localhost:7145/scalar/v1` to explore the API. Plain HTTP runs on `http://localhost:5077`.
 6. Start the frontend from the `FromTheKitchen` folder with `npm install` and `npm run dev`.
 
+## Tests
+
+```bash
+dotnet test
+```
+
+40 integration tests run in about 5 seconds and need no setup: no SQL Server, no user secrets.
+
+**How they work.** Each test class starts the real API in memory with `WebApplicationFactory<Program>`, so requests go through the same `Program.cs`, routing, model binding, Identity and JWT validation as in production. Only two things are swapped:
+- SQL Server becomes a private SQLite in-memory database, created from the EF Core model, menu seed included.
+- The web root becomes a temporary folder, so uploaded test images never touch `wwwroot`.
+
+Tests talk to the API over HTTP like a real client would. They register and log in real users and send real JWTs.
+
+**What they cover:**
+
+| Area | Examples |
+| --- | --- |
+| Authentication | Register and log in, JWT claims and 7-day expiry, wrong password, weak password, tampered token |
+| Admin accounts | The first Admin on an empty database, customers can't create Admins, Admins can |
+| Menu | Public reads, 400 and 404 for bad ids, customers can't change the menu, Admin create, update and delete including the image file |
+| Order ownership | The owner comes from the token not the body, customers see only their own orders, admins see all, 403 for someone else's order |
+| Status workflow | One data-driven test covering every allowed and blocked change. A blocked change returns 400 and saves nothing. |
+| Ratings | Only the customer who placed the order can rate it, not other customers and not admins |
+
+**Tradeoff:** SQLite is not SQL Server. SQL-Server-specific behaviour, like the migrations themselves, isn't covered. The next step would be running the same tests against a real SQL Server in Docker with [Testcontainers](https://dotnet.testcontainers.org/).
+
 ## Status and next steps
 
 This is a learning project, still in progress:
 
 - **First Admin:** on a fresh database, whoever registers as Admin first becomes Admin. That's fine locally. Before any deployment, seed the first Admin from configuration instead.
 - **Order totals come from the client:** `OrderTotal`, `TotalItem` and line prices are taken from the request as sent. They should be worked out on the server from the menu prices.
-- **Ideas:** payments and automated tests.
+- **Ideas:** payments, and running the tests in CI (GitHub Actions) on every push.
