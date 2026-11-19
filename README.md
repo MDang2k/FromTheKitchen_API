@@ -126,5 +126,4 @@ This is a learning project, still in progress:
 
 - **First Admin:** on a fresh database, whoever registers as Admin first becomes Admin. That's fine locally. Before any deployment, seed the first Admin from configuration instead.
 - **Order totals come from the client:** `OrderTotal`, `TotalItem` and line prices are taken from the request as sent. They should be worked out on the server from the menu prices.
-- **Leftovers:** the template `WeatherForecast` controller is still in the project.
 - **Ideas:** payments and automated tests.

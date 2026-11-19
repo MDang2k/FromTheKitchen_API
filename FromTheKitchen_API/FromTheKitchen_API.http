@@ -1,6 +1,6 @@
 @FromTheKitchen_API_HostAddress = http://localhost:5077
 
-GET {{FromTheKitchen_API_HostAddress}}/weatherforecast/
+GET {{FromTheKitchen_API_HostAddress}}/api/MenuItem
 Accept: application/json
 
 ###
