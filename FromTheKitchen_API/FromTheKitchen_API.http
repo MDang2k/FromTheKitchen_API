@@ -1,0 +1,6 @@
+@FromTheKitchen_API_HostAddress = http://localhost:5077
+
+GET {{FromTheKitchen_API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
