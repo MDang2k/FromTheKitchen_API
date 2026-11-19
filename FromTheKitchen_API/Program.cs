@@ -18,7 +18,10 @@ builder.Services.AddDbContext<ApplicationDbContext>(options => {
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>().AddEntityFrameworkStores<ApplicationDbContext>();
 builder.Services.AddControllers();
 
-var key = builder.Configuration.GetValue<string>("ApiSettings:Secret");
+// Kept out of source control: user secrets locally, an environment variable (ApiSettings__Secret) elsewhere
+var key = builder.Configuration.GetValue<string>("ApiSettings:Secret")
+    ?? throw new InvalidOperationException(
+        "ApiSettings:Secret is not set. Run: dotnet user-secrets set \"ApiSettings:Secret\" \"<a random key of at least 32 bytes>\"");
 builder.Services.AddAuthentication(u =>
 {
     u.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;

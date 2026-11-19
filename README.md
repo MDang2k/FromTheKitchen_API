@@ -81,7 +81,7 @@ FromTheKitchen_API/
 ├── FromTheKitchen_API.slnx
 └── FromTheKitchen_API/
     ├── Program.cs              # Services: EF Core, Identity, JWT, OpenAPI/Scalar, static files
-    ├── appsettings.json        # Connection string and JWT secret
+    ├── appsettings.json        # Connection string (the JWT secret lives in user secrets)
     ├── Controllers/
     │   ├── AuthController.cs       # Register / login, issues JWTs
     │   ├── MenuItemController.cs   # Menu CRUD and image upload
@@ -104,18 +104,21 @@ FromTheKitchen_API/
 **Prerequisites:** .NET 10 SDK, SQL Server (the default connection string expects `localhost\SQLEXPRESS` with Windows authentication), and the EF Core CLI (`dotnet tool install --global dotnet-ef`).
 
 1. Check `ConnectionStrings:DefaultConnection` in `FromTheKitchen_API/appsettings.json` matches your SQL Server.
-2. Create the database and seed the menu:
+2. Set the JWT signing key. It isn't in the repo; it's stored in [user secrets](https://learn.microsoft.com/aspnet/core/security/app-secrets) on your machine. Use any random string of at least 32 bytes:
+   ```bash
+   dotnet user-secrets set "ApiSettings:Secret" "<random key, at least 32 bytes>" --project FromTheKitchen_API
+   ```
+   The API refuses to start without it. Outside development, set the `ApiSettings__Secret` environment variable instead.
+3. Create the database and seed the menu:
    ```bash
    dotnet ef database update --project FromTheKitchen_API
    ```
-3. Run the API:
+4. Run the API:
    ```bash
    dotnet run --project FromTheKitchen_API --launch-profile https
    ```
-4. Open `https://localhost:7145/scalar/v1` to explore the API. Plain HTTP runs on `http://localhost:5077`.
-5. Start the frontend from the `FromTheKitchen` folder with `npm install` and `npm run dev`.
-
-> The JWT signing key lives in `appsettings.json` (`ApiSettings:Secret`) for local development only. For anything deployed, move it to [user secrets](https://learn.microsoft.com/aspnet/core/security/app-secrets) or environment variables.
+5. Open `https://localhost:7145/scalar/v1` to explore the API. Plain HTTP runs on `http://localhost:5077`.
+6. Start the frontend from the `FromTheKitchen` folder with `npm install` and `npm run dev`.
 
 ## Status and next steps
 
