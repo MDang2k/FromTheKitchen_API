@@ -1,5 +1,7 @@
 # From The Kitchen API
 
+[![CI/CD](https://github.com/MDang2k/FromTheKitchen_API/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/MDang2k/FromTheKitchen_API/actions/workflows/ci-cd.yml)
+
 Backend for **From The Kitchen**, a small restaurant ordering app. Customers browse a menu, place pickup orders, and track them. Admins manage the menu.
 
 This is a personal project. I built it to practise backend development with C# and ASP.NET Core: REST API design, Entity Framework Core, ASP.NET Core Identity, JWT authentication and role-based authorization.
