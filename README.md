@@ -85,9 +85,10 @@ In development the full interactive reference is at `/scalar/v1`, where you can 
 
 ```
 FromTheKitchen_API/
+├── .github/workflows/ci-cd.yml   # Test every push, deploy main to Azure
 ├── FromTheKitchen_API.slnx
 └── FromTheKitchen_API/
-    ├── Program.cs              # Services: EF Core, Identity, JWT, OpenAPI/Scalar, static files
+    ├── Program.cs              # Services, CORS, health check; migrates the DB and seeds the Admin at startup
     ├── appsettings.json        # Connection string (the JWT secret lives in user secrets)
     ├── Controllers/
     │   ├── AuthController.cs       # Register / login, issues JWTs
@@ -96,7 +97,8 @@ FromTheKitchen_API/
     │   ├── OrderDetailsController.cs # Rate order items
     │   └── AuthTestController.cs   # Endpoints for testing auth and roles
     ├── Data/
-    │   └── ApplicationDbContext.cs # DbSets and menu seed data
+    │   ├── ApplicationDbContext.cs # DbSets and menu seed data
+    │   └── AdminSeeder.cs          # Roles and the first Admin from config
     ├── Models/
     │   ├── ApplicationUser.cs, MenuItem.cs, OrderHeader.cs, OrderDetail.cs
     │   ├── ApiResponse.cs          # Shared response wrapper
@@ -107,6 +109,8 @@ FromTheKitchen_API/
 └── FromTheKitchen_API.Tests/
     ├── Infrastructure/ApiFactory.cs  # Runs the real API in memory on SQLite
     ├── AuthTests.cs                  # Register, login, JWT, admin rules
+    ├── AdminSeederTests.cs           # First Admin from config
+    ├── HostingTests.cs               # /health and CORS
     ├── MenuItemTests.cs              # Public menu, admin-only changes, image upload
     └── OrderTests.cs                 # Ownership, status workflow, ratings
 ```
@@ -161,9 +165,48 @@ Tests talk to the API over HTTP like a real client would. They register and log 
 
 **Tradeoff:** SQLite is not SQL Server. SQL-Server-specific behaviour, like the migrations themselves, isn't covered. The next step would be running the same tests against a real SQL Server in Docker with [Testcontainers](https://dotnet.testcontainers.org/).
 
+## Deploying (Azure)
+
+The API runs on **Azure App Service** (Linux) with an **Azure SQL Database**. [GitHub Actions](.github/workflows/ci-cd.yml) runs the tests on every push and pull request. Pushes to `main` then publish and deploy to App Service.
+
+The app sets itself up on startup: it applies migrations to the empty database, seeds the menu, and creates the first Admin from settings. No manual database step is needed.
+
+**One-time setup in the Azure portal:**
+
+1. Create a resource group with:
+   - an **Azure SQL Database** using the free offer. Under its server's Networking, allow Azure services to access it.
+   - an **App Service** on Linux with runtime .NET 10. The Free (F1) plan is enough to start.
+2. In the App Service, under **Settings → Environment variables**, add:
+
+   | Name | Value |
+   | --- | --- |
+   | `ConnectionStrings__DefaultConnection` | The ADO.NET connection string from the SQL database page, with the password filled in |
+   | `ApiSettings__Secret` | A new random key of at least 32 bytes (not the one you use locally) |
+   | `SeedAdmin__Email` / `SeedAdmin__Password` / `SeedAdmin__Name` | The first Admin account |
+   | `Cors__AllowedOrigins__0` | The deployed frontend's URL, e.g. `https://<frontend>.azurestaticapps.net` |
+   | `ImageStorage__Path` | `/home/data/images`, which keeps uploaded images across restarts and redeploys |
+
+3. Under **Monitoring → Health check**, set the path to `/health`.
+4. Connect GitHub:
+   - Under **Configuration → General settings**, turn on *SCM Basic Auth Publishing Credentials*. It's off by default and the publish profile needs it.
+   - Download the **publish profile** from the Overview page.
+   - In the GitHub repository, go to **Settings → Secrets and variables → Actions**. Add the secret `AZURE_WEBAPP_PUBLISH_PROFILE` (paste the file's contents) and the variable `AZURE_WEBAPP_NAME` (the App Service name).
+5. Push to `main`, or re-run the workflow. Until the variable exists, the deploy job is skipped and only the tests run.
+
+**Checking a deploy:**
+- `https://<app>.azurewebsites.net/health` returns `Healthy`.
+- `GET /api/MenuItem` lists the seeded dishes, which shows the migrations and seed ran.
+- Logging in as the seed Admin returns a token with the `Admin` role.
+
+Once the Admin exists you can delete `SeedAdmin__Password`; the seeder skips when it's empty.
+
+**Limits of this setup:**
+- Migrations run at startup, which is fine for one instance. Before scaling out, run them as a pipeline step instead (an EF Core migration bundle).
+- The free App Service plan sleeps when idle, so the first request after a while is slow.
+
 ## Status and next steps
 
 This is a learning project, still in progress:
 
 - **Order totals come from the client:** `OrderTotal`, `TotalItem` and line prices are taken from the request as sent. They should be worked out on the server from the menu prices.
-- **Ideas:** payments, and running the tests in CI (GitHub Actions) on every push.
+- **Ideas:** payments, deploying the frontend (Azure Static Web Apps), and running the tests against real SQL Server with Testcontainers.
