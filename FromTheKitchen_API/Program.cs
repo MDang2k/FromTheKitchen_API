@@ -1,4 +1,6 @@
 using FromTheKitchen_API.Data;
+using FromTheKitchen_API.Utility;
+using Microsoft.Extensions.FileProviders;
 using Scalar.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
@@ -13,10 +15,17 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddDbContext<ApplicationDbContext>(options => {
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
+    // Retries transient errors, e.g. Azure SQL serverless waking up from auto-pause
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"), sql => sql.EnableRetryOnFailure());
 });
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>().AddEntityFrameworkStores<ApplicationDbContext>();
 builder.Services.AddControllers();
+builder.Services.AddHealthChecks();
+
+// The frontend runs on another origin. It sends a Bearer header, not cookies, so no AllowCredentials.
+string[] allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
+    policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod()));
 
 // Kept out of source control: user secrets locally, an environment variable (ApiSettings__Secret) elsewhere
 var key = builder.Configuration.GetValue<string>("ApiSettings:Secret")
@@ -49,6 +58,15 @@ builder.Services.AddOpenApi(options =>
 
 var app = builder.Build();
 
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    // ponytail: tests run on SQLite, which can't apply SQL Server migrations. Migrating at startup
+    // is fine for one instance; move it to a migration bundle in the pipeline before scaling out.
+    if (db.Database.IsSqlServer()) db.Database.Migrate(); else db.Database.EnsureCreated();
+    await AdminSeeder.SeedAsync(scope.ServiceProvider, app.Configuration);
+}
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
@@ -58,11 +76,21 @@ if (app.Environment.IsDevelopment())
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
+
+// Uploads live outside wwwroot when ImageStorage:Path is set; serve them under /images next to the seeded ones
+string imagesFolder = SD.ImagesFolder(app.Configuration, app.Environment);
+if (Path.GetFullPath(imagesFolder) != Path.GetFullPath(Path.Combine(app.Environment.WebRootPath, "images")))
+{
+    Directory.CreateDirectory(imagesFolder);
+    app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(imagesFolder), RequestPath = "/images" });
+}
 app.UseHttpsRedirection();
+app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHealthChecks("/health");
 
 app.Run();
 

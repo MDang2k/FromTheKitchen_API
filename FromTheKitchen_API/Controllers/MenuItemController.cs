@@ -15,12 +15,25 @@ namespace FromTheKitchen_API.Controllers
     {
         private readonly ApplicationDbContext _context;
         private readonly ApiResponse _response;
-        private readonly IWebHostEnvironment _env;
-        public MenuItemController(ApplicationDbContext context, IWebHostEnvironment env)
+        private readonly string _imagesFolder;
+        public MenuItemController(ApplicationDbContext context, IWebHostEnvironment env, IConfiguration config)
         {
             _context = context;
-            _env = env;
+            _imagesFolder = SD.ImagesFolder(config, env);
             _response = new ApiResponse();
+        }
+
+        // Saves the upload to the images folder and returns the value stored in MenuItem.Image
+        private async Task<string> SaveImageAsync(IFormFile file)
+        {
+            // Only the file name: a client-sent "../../x.jpg" must not write outside the folder
+            string fileName = Path.GetFileName(file.FileName);
+            Directory.CreateDirectory(_imagesFolder);
+            using (var stream = new FileStream(Path.Combine(_imagesFolder, fileName), FileMode.Create))
+            {
+                await file.CopyToAsync(stream);
+            }
+            return "images/" + fileName;
         }
 
         [HttpGet]
@@ -42,6 +55,14 @@ namespace FromTheKitchen_API.Controllers
             }
 
             MenuItem? menuItem = _context.MenuItems.FirstOrDefault(u => u.Id == id);
+            if (menuItem == null)
+            {
+                _response.StatusCode = HttpStatusCode.NotFound;
+                _response.IsSuccess = false;
+                _response.ErrorMessages.Add("Menu item not found");
+                return NotFound(_response);
+            }
+
             _response.Result = menuItem;
             _response.StatusCode = HttpStatusCode.OK;
             return Ok(_response);
@@ -64,23 +85,6 @@ namespace FromTheKitchen_API.Controllers
                         return BadRequest(_response);
                     }
 
-                    var imagesPath = Path.Combine(_env.WebRootPath, "images");
-                    if (!Directory.Exists(imagesPath))
-                    {
-                        Directory.CreateDirectory(imagesPath);
-                    }
-
-                    var filePath = Path.Combine(imagesPath, menuItemCreateDTO.File.FileName);
-                    if (System.IO.File.Exists(filePath))
-                    {
-                        System.IO.File.Delete(filePath);
-                    }
-                    // Save the file to the server
-                    using (var stream = new FileStream(filePath, FileMode.Create))
-                    {
-                        await menuItemCreateDTO.File.CopyToAsync(stream);
-                    }
-
                     MenuItem menuItem = new()
                     {
                         Name = menuItemCreateDTO.Name,
@@ -88,7 +92,7 @@ namespace FromTheKitchen_API.Controllers
                         Category = menuItemCreateDTO.Category,
                         SpecialTag = menuItemCreateDTO.SpecialTag,
                         Price = menuItemCreateDTO.Price,
-                        Image = "images/" + menuItemCreateDTO.File.FileName
+                        Image = await SaveImageAsync(menuItemCreateDTO.File)
                     };
 
                     _context.MenuItems.Add(menuItem);
@@ -146,30 +150,7 @@ namespace FromTheKitchen_API.Controllers
 
                     if (menuItemUpdateDTO.File != null && menuItemUpdateDTO.File.Length > 0)
                     {
-                        var imagesPath = Path.Combine(_env.WebRootPath, "images");
-                        if (!Directory.Exists(imagesPath))
-                        {
-                            Directory.CreateDirectory(imagesPath);
-                        }
-
-                        var filePath = Path.Combine(imagesPath, menuItemUpdateDTO.File.FileName);
-                        if (System.IO.File.Exists(filePath))
-                        {
-                            System.IO.File.Delete(filePath);
-                        }
-
-                        var filePath_old = Path.Combine(imagesPath, menuItemUpdateDTO.File.FileName);
-                        if (System.IO.File.Exists(filePath_old))
-                        {
-                            System.IO.File.Delete(filePath_old);
-                        }
-
-                        // Save the file to the server
-                        using (var stream = new FileStream(filePath, FileMode.Create))
-                        {
-                            await menuItemUpdateDTO.File.CopyToAsync(stream);
-                        }
-                        menuItemFromDb.Image = "images/" + menuItemUpdateDTO.File.FileName;
+                        menuItemFromDb.Image = await SaveImageAsync(menuItemUpdateDTO.File);
                     }
 
 
@@ -218,8 +199,8 @@ namespace FromTheKitchen_API.Controllers
                         return NotFound(_response);
                     }
 
-                    // Seeded images start with "/", which would make Path.Combine ignore WebRootPath
-                    var filePath_old = Path.Combine(_env.WebRootPath, menuItemFromDb.Image.TrimStart('/'));
+                    // ponytail: with ImageStorage:Path set, seeded images (in wwwroot) are left alone; every deploy ships them anyway
+                    var filePath_old = Path.Combine(_imagesFolder, Path.GetFileName(menuItemFromDb.Image));
                     if (System.IO.File.Exists(filePath_old))
                     {
                         System.IO.File.Delete(filePath_old);
