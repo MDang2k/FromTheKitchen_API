@@ -17,6 +17,12 @@ builder.Services.AddDbContext<ApplicationDbContext>(options => {
 });
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>().AddEntityFrameworkStores<ApplicationDbContext>();
 builder.Services.AddControllers();
+builder.Services.AddHealthChecks();
+
+// The frontend runs on another origin. It sends a Bearer header, not cookies, so no AllowCredentials.
+string[] allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
+    policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod()));
 
 // Kept out of source control: user secrets locally, an environment variable (ApiSettings__Secret) elsewhere
 var key = builder.Configuration.GetValue<string>("ApiSettings:Secret")
@@ -68,10 +74,12 @@ if (app.Environment.IsDevelopment())
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseHttpsRedirection();
+app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHealthChecks("/health");
 
 app.Run();
 

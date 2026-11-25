@@ -42,6 +42,9 @@ The frontend is a separate project (React 19 + TypeScript + Vite + Tailwind CSS)
 - **Admins** see every order (optionally filtered with `?userId=`) and are the only ones who move an order to `Ready For Pick Up` or `Completed`.
 - Touching someone else's order returns 403.
 
+### Calls from the frontend
+Browsers only let the frontend call the API from origins listed in `Cors:AllowedOrigins`. In development that's `http://localhost:5173`, Vite's dev server.
+
 ### Consistent responses
 Every endpoint except the test ones wraps its result in the same `ApiResponse` shape, so the frontend handles every call the same way:
 
@@ -72,6 +75,7 @@ Every endpoint except the test ones wraps its result in the same `ApiResponse` s
 | PUT | `/api/OrderDetails/{orderDetailId}` | Owner | Rate one item of your order |
 | GET | `/api/AuthTest` | Any logged-in user | Checks that a JWT works |
 | GET | `/api/AuthTest/{value}` | Admin | Checks that the Admin role works |
+| GET | `/health` | – | Returns `Healthy` when the app is up (used by the host's health check) |
 
 In development the full interactive reference is at `/scalar/v1`, where you can paste a JWT and try every endpoint.
 
@@ -133,7 +137,7 @@ FromTheKitchen_API/
 dotnet test
 ```
 
-44 integration tests run in about 7 seconds and need no setup: no SQL Server, no user secrets.
+47 integration tests run in about 7 seconds and need no setup: no SQL Server, no user secrets.
 
 **How they work.** Each test class starts the real API in memory with `WebApplicationFactory<Program>`, so requests go through the same `Program.cs`, routing, model binding, Identity and JWT validation as in production. Only two things are swapped:
 - SQL Server becomes a private SQLite in-memory database, created from the EF Core model, menu seed included.
@@ -150,6 +154,7 @@ Tests talk to the API over HTTP like a real client would. They register and log 
 | Menu | Public reads, 400 and 404 for bad ids, customers can't change the menu, Admin create, update and delete including the image file |
 | Order ownership | The owner comes from the token not the body, customers see only their own orders, admins see all, 403 for someone else's order |
 | Status workflow | One data-driven test covering every allowed and blocked change. A blocked change returns 400 and saves nothing. |
+| Hosting | `/health` answers, the frontend origin gets CORS permission, other origins don't |
 | Ratings | Only the customer who placed the order can rate it, not other customers and not admins |
 
 **Tradeoff:** SQLite is not SQL Server. SQL-Server-specific behaviour, like the migrations themselves, isn't covered. The next step would be running the same tests against a real SQL Server in Docker with [Testcontainers](https://dotnet.testcontainers.org/).

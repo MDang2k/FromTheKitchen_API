@@ -26,6 +26,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
     public const string JwtSecret = "test-only-jwt-signing-key-that-is-long-enough-0123456789";
     public const string SeedAdminEmail = "seed-admin@example.test";
     public const string SeedAdminPassword = "Seed!Admin-Test-Pass1";
+    public const string FrontendOrigin = "https://frontend.example.test";
 
     // An in-memory SQLite database lives as long as its connection stays open
     private readonly SqliteConnection _connection = new("DataSource=:memory:");
@@ -39,6 +40,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("ApiSettings:Secret", JwtSecret);
         builder.UseSetting("SeedAdmin:Email", SeedAdminEmail);
         builder.UseSetting("SeedAdmin:Password", SeedAdminPassword);
+        builder.UseSetting("Cors:AllowedOrigins:0", FrontendOrigin);
         builder.UseWebRoot(WebRoot);
 
         builder.ConfigureTestServices(services =>
