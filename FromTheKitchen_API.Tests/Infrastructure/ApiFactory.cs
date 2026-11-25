@@ -24,6 +24,8 @@ namespace FromTheKitchen_API.Tests.Infrastructure;
 public sealed class ApiFactory : WebApplicationFactory<Program>
 {
     public const string JwtSecret = "test-only-jwt-signing-key-that-is-long-enough-0123456789";
+    public const string SeedAdminEmail = "seed-admin@example.test";
+    public const string SeedAdminPassword = "Seed!Admin-Test-Pass1";
 
     // An in-memory SQLite database lives as long as its connection stays open
     private readonly SqliteConnection _connection = new("DataSource=:memory:");
@@ -35,6 +37,8 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
     {
         builder.UseEnvironment("Testing");
         builder.UseSetting("ApiSettings:Secret", JwtSecret);
+        builder.UseSetting("SeedAdmin:Email", SeedAdminEmail);
+        builder.UseSetting("SeedAdmin:Password", SeedAdminPassword);
         builder.UseWebRoot(WebRoot);
 
         builder.ConfigureTestServices(services =>
@@ -45,14 +49,6 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
             _connection.Open();
             services.AddDbContext<ApplicationDbContext>(options => options.UseSqlite(_connection));
         });
-    }
-
-    protected override IHost CreateHost(IHostBuilder builder)
-    {
-        var host = base.CreateHost(builder);
-        using var scope = host.Services.CreateScope();
-        scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Database.EnsureCreated();
-        return host;
     }
 
     protected override void Dispose(bool disposing)
@@ -76,8 +72,8 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
         return client;
     }
 
-    /// <summary>The first Admin of this database, created once through the "first Admin" rule.</summary>
-    public Task<TestUser> GetAdminAsync() => _admin ??= RegisterAndLoginAsync(SD.Role_Admin);
+    /// <summary>The Admin that the API seeds from configuration at startup.</summary>
+    public Task<TestUser> GetAdminAsync() => _admin ??= LoginAsync(SeedAdminEmail, SeedAdminPassword);
 
     public Task<TestUser> CreateCustomerAsync() => RegisterAndLoginAsync(SD.Role_Customer);
 

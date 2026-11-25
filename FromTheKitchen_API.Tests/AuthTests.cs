@@ -57,20 +57,26 @@ public class AuthTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
-    public async Task The_first_admin_can_register_on_an_empty_database_but_the_next_one_cannot()
+    public async Task Nobody_can_self_register_as_admin_even_on_a_fresh_database()
     {
-        // Own factory: this test needs a database that has no Admin yet
+        // Own factory: nothing has touched this database except startup
         using var freshApi = new ApiFactory();
+        var registration = ApiFactory.NewRegistration(SD.Role_Admin);
 
-        var first = await freshApi.CreateClient().PostAsJsonAsync("/api/Auth/register", ApiFactory.NewRegistration(SD.Role_Admin));
-        var second = ApiFactory.NewRegistration(SD.Role_Admin);
-        var secondResponse = await freshApi.CreateClient().PostAsJsonAsync("/api/Auth/register", second);
-        var secondLogin = await freshApi.CreateClient().PostAsJsonAsync("/api/Auth/login",
-            new LoginRequestDTO { Email = second.Email, Password = second.Password });
+        var response = await freshApi.CreateClient().PostAsJsonAsync("/api/Auth/register", registration);
+        var login = await freshApi.CreateClient().PostAsJsonAsync("/api/Auth/login",
+            new LoginRequestDTO { Email = registration.Email, Password = registration.Password });
 
-        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, secondResponse.StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, secondLogin.StatusCode); // the account was never created
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, login.StatusCode); // the account was never created
+    }
+
+    [Fact]
+    public async Task The_admin_from_configuration_can_log_in_with_the_admin_role()
+    {
+        var admin = await factory.LoginAsync(ApiFactory.SeedAdminEmail, ApiFactory.SeedAdminPassword);
+
+        Assert.Equal(SD.Role_Admin, admin.Role);
     }
 
     [Fact]

@@ -49,6 +49,15 @@ builder.Services.AddOpenApi(options =>
 
 var app = builder.Build();
 
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    // ponytail: tests run on SQLite, which can't apply SQL Server migrations. Migrating at startup
+    // is fine for one instance; move it to a migration bundle in the pipeline before scaling out.
+    if (db.Database.IsSqlServer()) db.Database.Migrate(); else db.Database.EnsureCreated();
+    await AdminSeeder.SeedAsync(scope.ServiceProvider, app.Configuration);
+}
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {

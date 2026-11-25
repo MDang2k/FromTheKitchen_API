@@ -21,7 +21,8 @@ The frontend is a separate project (React 19 + TypeScript + Vite + Tailwind CSS)
 ## What it does
 
 ### Authentication and roles
-- `POST /api/Auth/register` creates a user with ASP.NET Core Identity. The first registration also creates the `Admin` and `Customer` roles. New users are `Customer` by default. Asking for `Admin` only works when the request carries an Admin's JWT, or when no Admin exists yet, so the first Admin of a fresh database can sign up. Otherwise it returns 403.
+- `POST /api/Auth/register` creates a user with ASP.NET Core Identity. New users are `Customer` by default. Asking for `Admin` only works when the request carries an Admin's JWT; otherwise it returns 403.
+- At startup the API applies pending migrations, creates the `Admin` and `Customer` roles, and creates the first Admin from the `SeedAdmin:Email` / `SeedAdmin:Password` settings if that account doesn't exist yet. A seed password that breaks Identity's rules stops startup with the reason.
 - `POST /api/Auth/login` checks the password and returns a JWT (valid 7 days) holding the user's id, email and role, plus the email and role in the response body.
 - The API validates the token's signature and lifetime on every request that needs authorization. `[Authorize(Roles = "Admin")]` limits endpoints to admins.
 
@@ -106,7 +107,7 @@ FromTheKitchen_API/
 
 ## Running locally
 
-**Prerequisites:** .NET 10 SDK, SQL Server (the default connection string expects `localhost\SQLEXPRESS` with Windows authentication), and the EF Core CLI (`dotnet tool install --global dotnet-ef`).
+**Prerequisites:** .NET 10 SDK, SQL Server (the default connection string expects `localhost\SQLEXPRESS` with Windows authentication), and, only for adding migrations, the EF Core CLI (`dotnet tool install --global dotnet-ef`).
 
 1. Check `ConnectionStrings:DefaultConnection` in `FromTheKitchen_API/appsettings.json` matches your SQL Server.
 2. Set the JWT signing key. It isn't in the repo; it's stored in [user secrets](https://learn.microsoft.com/aspnet/core/security/app-secrets) on your machine. Use any random string of at least 32 bytes:
@@ -114,11 +115,12 @@ FromTheKitchen_API/
    dotnet user-secrets set "ApiSettings:Secret" "<random key, at least 32 bytes>" --project FromTheKitchen_API
    ```
    The API refuses to start without it. Outside development, set the `ApiSettings__Secret` environment variable instead.
-3. Create the database and seed the menu:
+3. Choose the first Admin account. The API creates it at startup (the password must meet Identity's rules: 6+ characters with upper case, lower case, a digit and a symbol):
    ```bash
-   dotnet ef database update --project FromTheKitchen_API
+   dotnet user-secrets set "SeedAdmin:Email" "<admin email>" --project FromTheKitchen_API
+   dotnet user-secrets set "SeedAdmin:Password" "<admin password>" --project FromTheKitchen_API
    ```
-4. Run the API:
+4. Run the API. On startup it creates the database (applying migrations and the menu seed) if needed:
    ```bash
    dotnet run --project FromTheKitchen_API --launch-profile https
    ```
@@ -131,7 +133,7 @@ FromTheKitchen_API/
 dotnet test
 ```
 
-40 integration tests run in about 5 seconds and need no setup: no SQL Server, no user secrets.
+44 integration tests run in about 7 seconds and need no setup: no SQL Server, no user secrets.
 
 **How they work.** Each test class starts the real API in memory with `WebApplicationFactory<Program>`, so requests go through the same `Program.cs`, routing, model binding, Identity and JWT validation as in production. Only two things are swapped:
 - SQL Server becomes a private SQLite in-memory database, created from the EF Core model, menu seed included.
@@ -144,7 +146,7 @@ Tests talk to the API over HTTP like a real client would. They register and log 
 | Area | Examples |
 | --- | --- |
 | Authentication | Register and log in, JWT claims and 7-day expiry, wrong password, weak password, tampered token |
-| Admin accounts | The first Admin on an empty database, customers can't create Admins, Admins can |
+| Admin accounts | The first Admin is seeded from config (safe on restart, promotes an existing user, fails fast on a weak password), nobody can self-register as Admin, Admins can create Admins |
 | Menu | Public reads, 400 and 404 for bad ids, customers can't change the menu, Admin create, update and delete including the image file |
 | Order ownership | The owner comes from the token not the body, customers see only their own orders, admins see all, 403 for someone else's order |
 | Status workflow | One data-driven test covering every allowed and blocked change. A blocked change returns 400 and saves nothing. |
@@ -156,6 +158,5 @@ Tests talk to the API over HTTP like a real client would. They register and log 
 
 This is a learning project, still in progress:
 
-- **First Admin:** on a fresh database, whoever registers as Admin first becomes Admin. That's fine locally. Before any deployment, seed the first Admin from configuration instead.
 - **Order totals come from the client:** `OrderTotal`, `TotalItem` and line prices are taken from the request as sent. They should be worked out on the server from the menu prices.
 - **Ideas:** payments, and running the tests in CI (GitHub Actions) on every push.

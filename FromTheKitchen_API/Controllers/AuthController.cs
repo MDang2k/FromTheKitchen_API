@@ -32,12 +32,9 @@ namespace FromTheKitchen_API.Controllers
         {
             if (ModelState.IsValid)
             {
-                // Only an Admin can create another Admin. The one exception is the very first Admin,
-                // so a fresh database can be set up.
-                // ponytail: whoever registers first on a fresh database becomes Admin; seed the first Admin from config if this is ever deployed
+                // Only an Admin can create another Admin. The first Admin is seeded from configuration (AdminSeeder).
                 bool wantsAdmin = model.Role.Equals(SD.Role_Admin, StringComparison.OrdinalIgnoreCase);
-                if (wantsAdmin && !User.IsInRole(SD.Role_Admin)
-                    && (await _userManager.GetUsersInRoleAsync(SD.Role_Admin)).Count > 0)
+                if (wantsAdmin && !User.IsInRole(SD.Role_Admin))
                 {
                     _response.StatusCode = System.Net.HttpStatusCode.Forbidden;
                     _response.IsSuccess = false;
@@ -56,12 +53,6 @@ namespace FromTheKitchen_API.Controllers
                 var result = _userManager.CreateAsync(newUser, model.Password).Result;
                 if (result.Succeeded)
                 {
-                    if (!_roleManager.RoleExistsAsync(SD.Role_Admin).GetAwaiter().GetResult())
-                    {
-                        await _roleManager.CreateAsync(new IdentityRole(SD.Role_Admin));
-                        await _roleManager.CreateAsync(new IdentityRole(SD.Role_Customer));
-                    }
-
                     if (wantsAdmin)
                     {
                         await _userManager.AddToRoleAsync(newUser, SD.Role_Admin);
