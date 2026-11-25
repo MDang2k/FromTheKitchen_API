@@ -61,11 +61,14 @@ public class MenuItemTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var admin = factory.ClientFor(await factory.GetAdminAsync());
         string imageName = $"soup-{Guid.NewGuid():N}.jpg";
 
-        // Create: the image is uploaded with the form and saved under wwwroot/images
+        // Create: the image is uploaded with the form, saved to the uploads folder and served under /images
         var created = await admin.PostAsync("/api/MenuItem", NewMenuItemForm("Tomato Soup", imageName: imageName));
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
         int id = int.Parse(created.Headers.Location!.Segments[^1]);
-        Assert.True(File.Exists(Path.Combine(factory.WebRoot, "images", imageName)));
+        Assert.True(File.Exists(Path.Combine(factory.ImagesPath, imageName)));
+        var served = await factory.CreateClient().GetAsync($"/images/{imageName}");
+        Assert.Equal(HttpStatusCode.OK, served.StatusCode);
+        Assert.Equal(ImageBytes, await served.Content.ReadAsByteArrayAsync());
 
         var item = (await (await admin.GetAsync($"/api/MenuItem/{id}")).ReadEnvelopeAsync<MenuItem>()).Result!;
         Assert.Equal("Tomato Soup", item.Name);
@@ -81,7 +84,20 @@ public class MenuItemTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var deleted = await admin.DeleteAsync($"/api/MenuItem?id={id}");
         Assert.Equal(HttpStatusCode.OK, deleted.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync($"/api/MenuItem/{id}")).StatusCode);
-        Assert.False(File.Exists(Path.Combine(factory.WebRoot, "images", imageName)));
+        Assert.False(File.Exists(Path.Combine(factory.ImagesPath, imageName)));
+    }
+
+    [Fact]
+    public async Task An_uploaded_file_name_cannot_escape_the_images_folder()
+    {
+        var admin = factory.ClientFor(await factory.GetAdminAsync());
+        string fileName = $"escape-{Guid.NewGuid():N}.jpg";
+
+        var response = await admin.PostAsync("/api/MenuItem", NewMenuItemForm("Sneaky Soup", imageName: $"../../{fileName}"));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.True(File.Exists(Path.Combine(factory.ImagesPath, fileName)));
+        Assert.False(File.Exists(Path.GetFullPath(Path.Combine(factory.ImagesPath, "..", "..", fileName))));
     }
 
     [Fact]
@@ -92,6 +108,8 @@ public class MenuItemTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
+
+    private static readonly byte[] ImageBytes = [0xFF, 0xD8, 0xFF, 0xD9];
 
     private static MultipartFormDataContent NewMenuItemForm(string name, int? id = null, string? imageName = null, bool withImage = true)
     {
@@ -106,7 +124,7 @@ public class MenuItemTests(ApiFactory factory) : IClassFixture<ApiFactory>
         };
         if (withImage)
         {
-            form.Add(new ByteArrayContent([0xFF, 0xD8, 0xFF, 0xD9]), "File", imageName ?? $"test-{Guid.NewGuid():N}.jpg");
+            form.Add(new ByteArrayContent(ImageBytes), "File", imageName ?? $"test-{Guid.NewGuid():N}.jpg");
         }
         if (id != null)
         {

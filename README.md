@@ -16,7 +16,7 @@ The frontend is a separate project (React 19 + TypeScript + Vite + Tailwind CSS)
 | Users and roles | ASP.NET Core Identity (`IdentityDbContext<ApplicationUser>`) |
 | Authentication | JWT Bearer tokens (`System.IdentityModel.Tokens.Jwt`) |
 | API docs | Built-in OpenAPI document + [Scalar](https://github.com/scalar/scalar) UI |
-| File storage | Menu images saved to `wwwroot/images` and served as static files |
+| File storage | Menu images saved to a configurable folder (`wwwroot/images` locally) and served as static files |
 
 ## What it does
 
@@ -28,7 +28,7 @@ The frontend is a separate project (React 19 + TypeScript + Vite + Tailwind CSS)
 
 ### Menu
 - The database is seeded with 10 dishes (appetizers, salads, entrees, desserts, beverages), each with a price, a category, an optional tag such as "Best Seller" or "Chef's Special", and an image.
-- Menu items are created and updated with `multipart/form-data`, so the image file is uploaded in the same request and saved under `wwwroot/images`.
+- Menu items are created and updated with `multipart/form-data`, so the image file is uploaded in the same request. It's saved to the folder in `ImageStorage:Path` (default `wwwroot/images`) and served at `/images/<file name>`. Only the file name is kept, so a name like `../../x.jpg` can't write outside the folder.
 
 ### Orders
 - An order is an `OrderHeader` (pickup name, phone, email, user, total, item count, status, date) with a list of `OrderDetail` lines (menu item, quantity, name and price at time of order).
@@ -137,7 +137,7 @@ FromTheKitchen_API/
 dotnet test
 ```
 
-47 integration tests run in about 7 seconds and need no setup: no SQL Server, no user secrets.
+48 integration tests run in about 5 seconds and need no setup: no SQL Server, no user secrets.
 
 **How they work.** Each test class starts the real API in memory with `WebApplicationFactory<Program>`, so requests go through the same `Program.cs`, routing, model binding, Identity and JWT validation as in production. Only two things are swapped:
 - SQL Server becomes a private SQLite in-memory database, created from the EF Core model, menu seed included.
@@ -151,7 +151,7 @@ Tests talk to the API over HTTP like a real client would. They register and log 
 | --- | --- |
 | Authentication | Register and log in, JWT claims and 7-day expiry, wrong password, weak password, tampered token |
 | Admin accounts | The first Admin is seeded from config (safe on restart, promotes an existing user, fails fast on a weak password), nobody can self-register as Admin, Admins can create Admins |
-| Menu | Public reads, 400 and 404 for bad ids, customers can't change the menu, Admin create, update and delete including the image file |
+| Menu | Public reads, 400 and 404 for bad ids, customers can't change the menu, Admin create, update and delete including the image file and serving it, upload names cannot escape the images folder |
 | Order ownership | The owner comes from the token not the body, customers see only their own orders, admins see all, 403 for someone else's order |
 | Status workflow | One data-driven test covering every allowed and blocked change. A blocked change returns 400 and saves nothing. |
 | Hosting | `/health` answers, the frontend origin gets CORS permission, other origins don't |

@@ -1,4 +1,6 @@
 using FromTheKitchen_API.Data;
+using FromTheKitchen_API.Utility;
+using Microsoft.Extensions.FileProviders;
 using Scalar.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
@@ -73,6 +75,14 @@ if (app.Environment.IsDevelopment())
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
+
+// Uploads live outside wwwroot when ImageStorage:Path is set; serve them under /images next to the seeded ones
+string imagesFolder = SD.ImagesFolder(app.Configuration, app.Environment);
+if (Path.GetFullPath(imagesFolder) != Path.GetFullPath(Path.Combine(app.Environment.WebRootPath, "images")))
+{
+    Directory.CreateDirectory(imagesFolder);
+    app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(imagesFolder), RequestPath = "/images" });
+}
 app.UseHttpsRedirection();
 app.UseCors();
 app.UseAuthentication();

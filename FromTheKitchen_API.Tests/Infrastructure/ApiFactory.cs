@@ -32,7 +32,10 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
     private readonly SqliteConnection _connection = new("DataSource=:memory:");
     private Task<TestUser>? _admin;
 
-    public string WebRoot { get; } = Directory.CreateTempSubdirectory("ftk-tests-").FullName;
+    // Throwaway folder per factory: <root>/wwwroot is the web root, <root>/uploads/images takes uploads
+    private readonly string _root = Directory.CreateTempSubdirectory("ftk-tests-").FullName;
+    public string WebRoot => Directory.CreateDirectory(Path.Combine(_root, "wwwroot")).FullName;
+    public string ImagesPath => Path.Combine(_root, "uploads", "images");
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -41,6 +44,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("SeedAdmin:Email", SeedAdminEmail);
         builder.UseSetting("SeedAdmin:Password", SeedAdminPassword);
         builder.UseSetting("Cors:AllowedOrigins:0", FrontendOrigin);
+        builder.UseSetting("ImageStorage:Path", ImagesPath);
         builder.UseWebRoot(WebRoot);
 
         builder.ConfigureTestServices(services =>
@@ -57,10 +61,10 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
     {
         base.Dispose(disposing);
         // WebApplicationFactory can call this more than once (Dispose and DisposeAsync)
-        if (disposing && Directory.Exists(WebRoot))
+        if (disposing && Directory.Exists(_root))
         {
             _connection.Dispose();
-            Directory.Delete(WebRoot, recursive: true);
+            Directory.Delete(_root, recursive: true);
         }
     }
 
