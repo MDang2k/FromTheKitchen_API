@@ -36,6 +36,13 @@ namespace FromTheKitchen_API.Data
                 user = new ApplicationUser { UserName = email, Email = email, Name = config["SeedAdmin:Name"] ?? "Admin" };
                 ThrowIfFailed(await userManager.CreateAsync(user, password));
             }
+            else if (!await userManager.IsInRoleAsync(user, SD.Role_Admin) && !await userManager.CheckPasswordAsync(user, password))
+            {
+                // Self-registration needs no email confirmation, so an existing account with this email
+                // may belong to anyone. Only promote it if the operator knows its password.
+                throw new InvalidOperationException(
+                    $"Could not seed the Admin account: {email} already exists and SeedAdmin:Password does not match its password.");
+            }
 
             if (!await userManager.IsInRoleAsync(user, SD.Role_Admin))
             {

@@ -24,7 +24,7 @@ The frontend is a separate project (React 19 + TypeScript + Vite + Tailwind CSS)
 
 ### Authentication and roles
 - `POST /api/Auth/register` creates a user with ASP.NET Core Identity. New users are `Customer` by default. Asking for `Admin` only works when the request carries an Admin's JWT; otherwise it returns 403.
-- At startup the API applies pending migrations, creates the `Admin` and `Customer` roles, and creates the first Admin from the `SeedAdmin:Email` / `SeedAdmin:Password` settings if that account doesn't exist yet. A seed password that breaks Identity's rules stops startup with the reason.
+- At startup the API applies pending migrations, creates the `Admin` and `Customer` roles, and creates the first Admin from the `SeedAdmin:Email` / `SeedAdmin:Password` settings if that account doesn't exist yet. An existing account with that email is only promoted if the password matches, so a stranger who registered the address first can't become Admin. A seed password that breaks Identity's rules stops startup with the reason.
 - `POST /api/Auth/login` checks the password and returns a JWT (valid 7 days) holding the user's id, email and role, plus the email and role in the response body.
 - The API validates the token's signature and lifetime on every request that needs authorization. `[Authorize(Roles = "Admin")]` limits endpoints to admins.
 
@@ -143,7 +143,7 @@ FromTheKitchen_API/
 dotnet test
 ```
 
-48 integration tests run in about 5 seconds and need no setup: no SQL Server, no user secrets.
+49 integration tests run in about 5 seconds and need no setup: no SQL Server, no user secrets.
 
 **How they work.** Each test class starts the real API in memory with `WebApplicationFactory<Program>`, so requests go through the same `Program.cs`, routing, model binding, Identity and JWT validation as in production. Only two things are swapped:
 - SQL Server becomes a private SQLite in-memory database, created from the EF Core model, menu seed included.
@@ -156,7 +156,7 @@ Tests talk to the API over HTTP like a real client would. They register and log 
 | Area | Examples |
 | --- | --- |
 | Authentication | Register and log in, JWT claims and 7-day expiry, wrong password, weak password, tampered token |
-| Admin accounts | The first Admin is seeded from config (safe on restart, promotes an existing user, fails fast on a weak password), nobody can self-register as Admin, Admins can create Admins |
+| Admin accounts | The first Admin is seeded from config (safe on restart, promotes an existing user only with the right password, fails fast on a weak password), nobody can self-register as Admin, Admins can create Admins |
 | Menu | Public reads, 400 and 404 for bad ids, customers can't change the menu, Admin create, update and delete including the image file and serving it, upload names cannot escape the images folder |
 | Order ownership | The owner comes from the token not the body, customers see only their own orders, admins see all, 403 for someone else's order |
 | Status workflow | One data-driven test covering every allowed and blocked change. A blocked change returns 400 and saves nothing. |

@@ -115,6 +115,11 @@ namespace FromTheKitchen_API.Controllers
                         return BadRequest(_response);
                     }
 
+                    // The token carries one role. A user promoted to Admin keeps Customer too, and the
+                    // role list has no fixed order, so pick Admin explicitly.
+                    var roles = await _userManager.GetRolesAsync(userFromDb);
+                    string role = roles.Contains(SD.Role_Admin) ? SD.Role_Admin : roles.FirstOrDefault()!;
+
                     JwtSecurityTokenHandler tokenHandler = new JwtSecurityTokenHandler();
                     byte[] key = Encoding.ASCII.GetBytes(secretKey);
 
@@ -124,7 +129,7 @@ namespace FromTheKitchen_API.Controllers
                             new ("fullname", userFromDb.Id),
                             new ("id", userFromDb.Id),
                             new (ClaimTypes.Email, userFromDb.Email!.ToString()),
-                            new (ClaimTypes.Role, _userManager.GetRolesAsync(userFromDb).Result.FirstOrDefault()!)
+                            new (ClaimTypes.Role, role)
                             ]),
                         Expires = DateTime.UtcNow.AddDays(7),
                         SigningCredentials = new(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
@@ -136,7 +141,7 @@ namespace FromTheKitchen_API.Controllers
                     {
                         Email = userFromDb.Email,
                         Token = tokenHandler.WriteToken(token),
-                        Role = _userManager.GetRolesAsync(userFromDb).Result.FirstOrDefault()!
+                        Role = role
                     };
 
                     _response.Result = loginResponse;
