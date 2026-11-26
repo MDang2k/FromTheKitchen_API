@@ -197,6 +197,7 @@ The app sets itself up on startup: it applies migrations to the empty database, 
 - `https://<app>.azurewebsites.net/health` returns `Healthy`.
 - `GET /api/MenuItem` lists the seeded dishes, which shows the migrations and seed ran.
 - Logging in as the seed Admin returns a token with the `Admin` role.
+- For a full end-to-end check, run [`scripts/live-smoke.ps1`](scripts/live-smoke.ps1) `-AdminEmail <seed admin email>`. It asks for the Admin password, then creates a throwaway customer and walks one order through the whole workflow (ownership, status rules, ratings), printing PASS/FAIL for each check. The test customer and its order stay in the database.
 
 Once the Admin exists you can delete `SeedAdmin__Password`; the seeder skips when it's empty.
 
