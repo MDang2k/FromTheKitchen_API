@@ -8,12 +8,14 @@ on:
       - "FromTheKitchen_API/**"
       - "FromTheKitchen_API.Tests/**"
       - "FromTheKitchen_API.slnx"
+      - "docs/api/**"
       - ".github/workflows/ci-cd.yml"
   pull_request:
     paths:
       - "FromTheKitchen_API/**"
       - "FromTheKitchen_API.Tests/**"
       - "FromTheKitchen_API.slnx"
+      - "docs/api/**"
       - ".github/workflows/ci-cd.yml"
 
 permissions:

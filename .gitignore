@@ -483,3 +483,7 @@ $RECYCLE.BIN/
 
 # Claude Code local settings
 .claude/
+
+# Claude superpowers working files (plans, scratch)
+.superpowers/
+docs/superpowers/
