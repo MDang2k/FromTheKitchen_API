@@ -1,5 +1,7 @@
+// In production the API serves this app, so calls go to the same origin ("").
+// In development Vite runs on :5173 and the API on :7145.
 export const API_BASE_URL: string =
-    import.meta.env.VITE_API_URL ?? "https://localhost:7145";
+    import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? "https://localhost:7145" : "");
 
 export interface MenuItem {
     id: number;

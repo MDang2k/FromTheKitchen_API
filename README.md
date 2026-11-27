@@ -94,7 +94,7 @@ In development the full interactive reference is at `/scalar/v1`, where you can 
 
 ```
 ├── .github/workflows/
-│   ├── ci-cd.yml               # API: test API changes, deploy main to Azure
+│   ├── ci-cd.yml               # Test, then deploy main (API + built frontend) to Azure
 │   └── web.yml                 # Frontend: lint and build frontend changes
 ├── docs/
 │   ├── er-diagram.md           # Data model (Mermaid ER diagram)
@@ -162,7 +162,7 @@ In development the full interactive reference is at `/scalar/v1`, where you can 
    npm install
    npm run dev
    ```
-   It runs on `http://localhost:5173` and calls the API at `https://localhost:7145`. Set `VITE_API_URL` to point it somewhere else.
+   It runs on `http://localhost:5173` and calls the API at `https://localhost:7145`. Set `VITE_API_URL` to point it somewhere else. Production builds call the API on their own origin, because the API serves them (see Deploying).
 
 ## Tests
 
@@ -196,7 +196,9 @@ Tests talk to the API over HTTP like a real client would. They register and log 
 
 ## Deploying (Azure)
 
-The API runs on **Azure App Service** (Linux) with an **Azure SQL Database**. [GitHub Actions](.github/workflows/ci-cd.yml) runs the tests on every push and pull request that changes the API. Pushes to `main` that change the API then publish and deploy to App Service. Frontend changes run [their own workflow](.github/workflows/web.yml), which lints and builds but doesn't deploy yet.
+The app runs on **Azure App Service** (Linux) with an **Azure SQL Database**. The API also serves the frontend, so the site and the API share one address and no CORS setup is needed.
+
+[GitHub Actions](.github/workflows/ci-cd.yml) runs the tests on every push and pull request that changes the API or the frontend. Pushes to `main` then publish the API, build the frontend, copy it into the published `wwwroot`, and deploy both to App Service. Routes the frontend owns, like `/cart` or `/my-orders`, get `index.html` from the API, so refreshing a page or opening a shared link works. Unknown `/api` paths still return 404. [web.yml](.github/workflows/web.yml) also lints and builds frontend changes.
 
 The app sets itself up on startup: it applies migrations to the empty database, seeds the menu, and creates the first Admin from settings. No manual database step is needed.
 
@@ -212,7 +214,7 @@ The app sets itself up on startup: it applies migrations to the empty database, 
    | `ConnectionStrings__DefaultConnection` | The ADO.NET connection string from the SQL database page, with the password filled in |
    | `ApiSettings__Secret` | A new random key of at least 32 bytes (not the one you use locally) |
    | `SeedAdmin__Email` / `SeedAdmin__Password` / `SeedAdmin__Name` | The first Admin account |
-   | `Cors__AllowedOrigins__0` | The deployed frontend's URL, e.g. `https://<frontend>.azurestaticapps.net` |
+   | `Cors__AllowedOrigins__0` | Only if a frontend on another address calls the API. Not needed for the frontend the API serves itself |
    | `ImageStorage__Path` | `/home/data/images`, which keeps uploaded images across restarts and redeploys |
 
 3. Under **Monitoring → Health check**, set the path to `/health`.
@@ -239,4 +241,4 @@ Once the Admin exists you can delete `SeedAdmin__Password`; the seeder skips whe
 This is a learning project, still in progress:
 
 - **Retiring dishes:** items that were ordered can't be deleted. An "available" flag on `MenuItem` (or a nullable `OrderDetail.MenuItemId`) would let admins hide them.
-- **Ideas:** payments, deploying the frontend (Azure Static Web Apps, or serving its build from the API's `wwwroot`), and running the tests against real SQL Server with Testcontainers.
+- **Ideas:** payments, a CDN in front of the static files, and running the tests against real SQL Server with Testcontainers.

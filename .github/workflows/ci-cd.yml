@@ -1,19 +1,22 @@
 name: CI/CD
 
-# Only API changes run this; the frontend has its own workflow (web.yml),
-# so a frontend-only change never redeploys the API.
+# The deployed app is the API plus the frontend it serves from wwwroot,
+# so changes to either one test and (on main) redeploy it.
+# web.yml separately lints and builds frontend changes.
 on:
   push:
     paths:
       - "FromTheKitchen_API/**"
       - "FromTheKitchen_API.Tests/**"
       - "FromTheKitchen_API.slnx"
+      - "FromTheKitchen_Web/**"
       - ".github/workflows/ci-cd.yml"
   pull_request:
     paths:
       - "FromTheKitchen_API/**"
       - "FromTheKitchen_API.Tests/**"
       - "FromTheKitchen_API.slnx"
+      - "FromTheKitchen_Web/**"
       - ".github/workflows/ci-cd.yml"
 
 permissions:
@@ -43,6 +46,19 @@ jobs:
           dotnet-version: 10.0.x
       - name: Publish
         run: dotnet publish FromTheKitchen_API --configuration Release --output publish
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: FromTheKitchen_Web/package-lock.json
+      - name: Build the frontend
+        working-directory: FromTheKitchen_Web
+        # No VITE_API_URL: the built app calls the API on its own origin.
+        run: |
+          npm ci
+          npm run build
+      - name: Add the frontend to the published wwwroot
+        run: cp -r FromTheKitchen_Web/dist/. publish/wwwroot/
       - name: Deploy to Azure App Service
         uses: azure/webapps-deploy@v3
         with:
