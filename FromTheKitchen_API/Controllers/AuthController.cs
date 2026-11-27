@@ -126,7 +126,7 @@ namespace FromTheKitchen_API.Controllers
                     SecurityTokenDescriptor tokenDescriptor = new()
                     {
                         Subject = new System.Security.Claims.ClaimsIdentity([
-                            new ("fullname", userFromDb.Id),
+                            new ("fullname", userFromDb.Name ?? string.Empty),
                             new ("id", userFromDb.Id),
                             new (ClaimTypes.Email, userFromDb.Email!.ToString()),
                             new (ClaimTypes.Role, role)
