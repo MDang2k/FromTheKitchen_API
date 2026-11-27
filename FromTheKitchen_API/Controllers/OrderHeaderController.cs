@@ -84,36 +84,40 @@ namespace FromTheKitchen_API.Controllers
             {
                 if (ModelState.IsValid)
                 {
+                    // Prices, names and totals come from the database, never the client, so nobody can set their own price.
+                    var lines = orderHeaderDTO.OrderDetailsDTO;
+                    var ids = lines.Select(d => d.MenuItemId).Distinct().ToList();
+                    var menuItems = _db.MenuItems.Where(m => ids.Contains(m.Id)).ToDictionary(m => m.Id);
+                    if (lines.Count == 0 || lines.Any(d => d.Quantity <= 0 || !menuItems.ContainsKey(d.MenuItemId)))
+                    {
+                        _response.IsSuccess = false;
+                        _response.StatusCode = HttpStatusCode.BadRequest;
+                        _response.ErrorMessages.Add("The order is empty or has items that are no longer on the menu");
+                        return BadRequest(_response);
+                    }
+
                     OrderHeader orderHeader = new()
                     {
                         PickUpName = orderHeaderDTO.PickUpName,
                         PhoneNumber = orderHeaderDTO.PhoneNumber,
                         PickUpEmail = orderHeaderDTO.PickUpEmail,
                         OrderDate = DateTime.Now,
-                        OrderTotal = orderHeaderDTO.OrderTotal,
+                        OrderTotal = lines.Sum(d => menuItems[d.MenuItemId].Price * d.Quantity),
                         Status = SD.status_confirmed,
-                        TotalItem = orderHeaderDTO.TotalItem,
+                        TotalItem = lines.Sum(d => d.Quantity),
                         // Taken from the token, not the body, so nobody can place orders for someone else
                         ApplicationUserId = CallerId,
-
+                        OrderDetails = lines.Select(d => new OrderDetail
+                        {
+                            MenuItemId = d.MenuItemId,
+                            Quantity = d.Quantity,
+                            ItemName = menuItems[d.MenuItemId].Name,
+                            Price = menuItems[d.MenuItemId].Price
+                        }).ToList()
                     };
 
+                    // One SaveChanges: header and details are written together or not at all.
                     _db.OrderHeaders.Add(orderHeader);
-                    _db.SaveChanges();
-
-
-                    foreach (var orderDetailDTO in orderHeaderDTO.OrderDetailsDTO)
-                    {
-                        OrderDetail orderDetail = new()
-                        {
-                            OrderHeaderId = orderHeader.OrderHeaderId,
-                            MenuItemId = orderDetailDTO.MenuItemId,
-                            Quantity = orderDetailDTO.Quantity,
-                            ItemName = orderDetailDTO.ItemName,
-                            Price = orderDetailDTO.Price
-                        };
-                        _db.OrderDetails.Add(orderDetail);
-                    }
                     _db.SaveChanges();
                     _response.Result = orderHeader;
                     orderHeader.OrderDetails = [];
