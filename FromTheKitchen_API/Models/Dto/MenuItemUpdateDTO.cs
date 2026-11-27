@@ -13,6 +13,7 @@ namespace FromTheKitchen_API.Models.Dto
         public string? SpecialTag { get; set; } 
         [Range(1, 1000)]
         public double Price { get; set; }
-        public IFormFile File { get; set; } 
+        // Optional: leave it out to keep the current image.
+        public IFormFile? File { get; set; }
     }
 }

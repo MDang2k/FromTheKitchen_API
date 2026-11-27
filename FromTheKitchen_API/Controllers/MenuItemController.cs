@@ -23,17 +23,47 @@ namespace FromTheKitchen_API.Controllers
             _response = new ApiResponse();
         }
 
+        private static readonly string[] AllowedImageExtensions = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+        private const long MaxImageBytes = 5 * 1024 * 1024;
+
+        // Images are served from the API's own origin, so only real image types get in (no .html, .svg or .js).
+        private static string? ImageError(IFormFile file) =>
+            !AllowedImageExtensions.Contains(Path.GetExtension(file.FileName).ToLowerInvariant()) ? "The image must be a JPG, PNG, WebP or GIF file."
+            : file.Length > MaxImageBytes ? "The image must be 5 MB or smaller."
+            : null;
+
+        private BadRequestObjectResult Invalid(params string[] errors)
+        {
+            _response.IsSuccess = false;
+            _response.StatusCode = HttpStatusCode.BadRequest;
+            _response.ErrorMessages = errors.Length > 0
+                ? [.. errors]
+                : ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+            return BadRequest(_response);
+        }
+
         // Saves the upload to the images folder and returns the value stored in MenuItem.Image
         private async Task<string> SaveImageAsync(IFormFile file)
         {
-            // Only the file name: a client-sent "../../x.jpg" must not write outside the folder
-            string fileName = Path.GetFileName(file.FileName);
+            // A fresh name every time: an upload never overwrites another item's image,
+            // and the client's file name (e.g. "../../x.jpg") is never used as a path.
+            string fileName = $"{Guid.NewGuid():N}{Path.GetExtension(file.FileName).ToLowerInvariant()}";
             Directory.CreateDirectory(_imagesFolder);
             using (var stream = new FileStream(Path.Combine(_imagesFolder, fileName), FileMode.Create))
             {
                 await file.CopyToAsync(stream);
             }
             return "images/" + fileName;
+        }
+
+        // ponytail: with ImageStorage:Path set, seeded images (in wwwroot) are left alone; every deploy ships them anyway
+        private void DeleteImage(string image)
+        {
+            var path = Path.Combine(_imagesFolder, Path.GetFileName(image));
+            if (System.IO.File.Exists(path))
+            {
+                System.IO.File.Delete(path);
+            }
         }
 
         [HttpGet]
@@ -79,10 +109,11 @@ namespace FromTheKitchen_API.Controllers
                 {
                     if (menuItemCreateDTO.File == null || menuItemCreateDTO.File.Length == 0)
                     {
-                        _response.IsSuccess = false;
-                        _response.StatusCode = HttpStatusCode.BadRequest;
-                        _response.ErrorMessages = ["No file uploaded."];
-                        return BadRequest(_response);
+                        return Invalid("No file uploaded.");
+                    }
+                    if (ImageError(menuItemCreateDTO.File) is string imageError)
+                    {
+                        return Invalid(imageError);
                     }
 
                     MenuItem menuItem = new()
@@ -98,14 +129,14 @@ namespace FromTheKitchen_API.Controllers
                     _context.MenuItems.Add(menuItem);
                     await _context.SaveChangesAsync();
 
-                    _response.Result = menuItemCreateDTO;
+                    _response.Result = menuItem;
                     _response.StatusCode = HttpStatusCode.Created;
                     return CreatedAtRoute("GetMenuItem", new { id = menuItem.Id }, _response);
 
                 }
                 else
                 {
-                    _response.IsSuccess = false;
+                    return Invalid();
                 }
             }
             catch (Exception ex)
@@ -126,20 +157,23 @@ namespace FromTheKitchen_API.Controllers
             {
                 if (ModelState.IsValid)
                 {
-                    if (menuItemUpdateDTO.File == null || menuItemUpdateDTO.Id != id)
+                    if (menuItemUpdateDTO.Id != id)
                     {
-                        _response.IsSuccess = false;
-                        _response.StatusCode = HttpStatusCode.BadRequest;
-                        return BadRequest(_response);
+                        return Invalid("Menu item id mismatch.");
                     }
 
                     MenuItem? menuItemFromDb = await _context.MenuItems.FirstOrDefaultAsync(u => u.Id == id);
 
                     if (menuItemFromDb == null)
                     {
-                        _response.IsSuccess = false;
-                        _response.StatusCode = HttpStatusCode.BadRequest;
-                        return BadRequest(_response);
+                        return Invalid("Menu item not found.");
+                    }
+
+                    // A new image is optional: editing the name or price keeps the current one.
+                    bool newImage = menuItemUpdateDTO.File is { Length: > 0 };
+                    if (newImage && ImageError(menuItemUpdateDTO.File!) is string imageError)
+                    {
+                        return Invalid(imageError);
                     }
 
                     menuItemFromDb.Name = menuItemUpdateDTO.Name;
@@ -148,22 +182,28 @@ namespace FromTheKitchen_API.Controllers
                     menuItemFromDb.SpecialTag = menuItemUpdateDTO.SpecialTag;
                     menuItemFromDb.Price = menuItemUpdateDTO.Price;
 
-                    if (menuItemUpdateDTO.File != null && menuItemUpdateDTO.File.Length > 0)
+                    string oldImage = menuItemFromDb.Image;
+                    if (newImage)
                     {
-                        menuItemFromDb.Image = await SaveImageAsync(menuItemUpdateDTO.File);
+                        menuItemFromDb.Image = await SaveImageAsync(menuItemUpdateDTO.File!);
                     }
-
 
                     _context.MenuItems.Update(menuItemFromDb);
                     await _context.SaveChangesAsync();
 
-                    _response.Result = HttpStatusCode.NoContent;
+                    // Only after the row points at the new file, so a failed save never loses the image.
+                    if (newImage)
+                    {
+                        DeleteImage(oldImage);
+                    }
+
+                    _response.Result = menuItemFromDb;
                     return Ok(_response);
 
                 }
                 else
                 {
-                    _response.IsSuccess = false;
+                    return Invalid();
                 }
             }
             catch (Exception ex)
@@ -199,16 +239,19 @@ namespace FromTheKitchen_API.Controllers
                         return NotFound(_response);
                     }
 
-                    // ponytail: with ImageStorage:Path set, seeded images (in wwwroot) are left alone; every deploy ships them anyway
-                    var filePath_old = Path.Combine(_imagesFolder, Path.GetFileName(menuItemFromDb.Image));
-                    if (System.IO.File.Exists(filePath_old))
+                    // The OrderDetails foreign key cascades, so deleting an ordered item would erase lines from past orders.
+                    // ponytail: refuse instead; make OrderDetail.MenuItemId nullable (SetNull) or add an "available" flag if retiring dishes matters.
+                    if (await _context.OrderDetails.AnyAsync(d => d.MenuItemId == id))
                     {
-                        System.IO.File.Delete(filePath_old);
+                        _response.IsSuccess = false;
+                        _response.StatusCode = HttpStatusCode.Conflict;
+                        _response.ErrorMessages.Add("This item is in past orders, so it can't be deleted. Edit it instead.");
+                        return Conflict(_response);
                     }
-
 
                     _context.MenuItems.Remove(menuItemFromDb);
                     await _context.SaveChangesAsync();
+                    DeleteImage(menuItemFromDb.Image);
 
                     _response.Result = HttpStatusCode.NoContent;
                     return Ok(_response);
