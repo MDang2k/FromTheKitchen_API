@@ -11,6 +11,8 @@ This repository holds both halves:
 - **`FromTheKitchen_API/`**: the ASP.NET Core API described below.
 - **`FromTheKitchen_Web/`**: the React 19 + TypeScript + Vite + Tailwind CSS frontend that calls it. Customers browse the menu, keep a cart, check out and track their orders; admins manage orders and the menu.
 
+**Design docs:** the [data model (ER diagram)](docs/er-diagram.md), the [architecture decision records](docs/adr/README.md), and the [OpenAPI spec](docs/api/openapi.json), which is generated from the code and checked by a test. They're all indexed in [docs/](docs/README.md).
+
 ## Tech stack
 
 | Area | Technology |
@@ -86,7 +88,7 @@ Every endpoint except the test ones wraps its result in the same `ApiResponse` s
 | GET | `/api/AuthTest/{value}` | Admin | Checks that the Admin role works |
 | GET | `/health` | – | Returns `Healthy` when the app is up (used by the host's health check) |
 
-In development the full interactive reference is at `/scalar/v1`, where you can paste a JWT and try every endpoint.
+In development the full interactive reference is at `/scalar/v1`, where you can paste a JWT and try every endpoint. The same contract is committed as [docs/api/openapi.json](docs/api/openapi.json) (see [docs/](docs/README.md#the-api-spec) for how it's kept up to date).
 
 ## Project structure
 
@@ -94,6 +96,10 @@ In development the full interactive reference is at `/scalar/v1`, where you can 
 ├── .github/workflows/
 │   ├── ci-cd.yml               # API: test API changes, deploy main to Azure
 │   └── web.yml                 # Frontend: lint and build frontend changes
+├── docs/
+│   ├── er-diagram.md           # Data model (Mermaid ER diagram)
+│   ├── adr/                    # Architecture decision records
+│   └── api/openapi.json        # OpenAPI spec, generated and checked by a test
 ├── FromTheKitchen_Web/         # React frontend (see "Running locally")
 │   └── src/
 │       ├── pages/              # Home, auth, cart/checkout, orders, admin pages
@@ -126,7 +132,8 @@ In development the full interactive reference is at `/scalar/v1`, where you can 
     ├── AdminSeederTests.cs           # First Admin from config
     ├── HostingTests.cs               # /health and CORS
     ├── MenuItemTests.cs              # Public menu, admin-only changes, image upload
-    └── OrderTests.cs                 # Ownership, status workflow, ratings
+    ├── OrderTests.cs                 # Ownership, status workflow, ratings
+    └── OpenApiDocumentTests.cs       # docs/api/openapi.json matches the code
 ```
 
 ## Running locally
@@ -163,7 +170,7 @@ In development the full interactive reference is at `/scalar/v1`, where you can 
 dotnet test
 ```
 
-58 integration tests run in about 7 seconds and need no setup: no SQL Server, no user secrets.
+59 integration tests run in about 7 seconds and need no setup: no SQL Server, no user secrets.
 
 **How they work.** Each test class starts the real API in memory with `WebApplicationFactory<Program>`, so requests go through the same `Program.cs`, routing, model binding, Identity and JWT validation as in production. Only two things are swapped:
 - SQL Server becomes a private SQLite in-memory database, created from the EF Core model, menu seed included.
@@ -183,6 +190,7 @@ Tests talk to the API over HTTP like a real client would. They register and log 
 | Status workflow | One data-driven test covering every allowed and blocked change. A blocked change returns 400 and saves nothing. |
 | Hosting | `/health` answers, the frontend origin gets CORS permission, other origins don't |
 | Ratings | Only the customer who placed the order can rate it, not other customers and not admins |
+| API spec | The committed `docs/api/openapi.json` matches the OpenAPI document the API generates |
 
 **Tradeoff:** SQLite is not SQL Server. SQL-Server-specific behaviour, like the migrations themselves, isn't covered. The next step would be running the same tests against a real SQL Server in Docker with [Testcontainers](https://dotnet.testcontainers.org/).
 
