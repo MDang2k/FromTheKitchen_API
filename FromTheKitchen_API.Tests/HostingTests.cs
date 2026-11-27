@@ -31,6 +31,25 @@ public class HostingTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.False(response.Headers.Contains("Access-Control-Allow-Origin"));
     }
 
+    [Fact]
+    public async Task App_routes_get_the_frontend_but_unknown_api_paths_and_files_stay_404()
+    {
+        const string html = "<!doctype html><div id=\"root\"></div>";
+        await File.WriteAllTextAsync(Path.Combine(factory.WebRoot, "index.html"), html);
+        var client = factory.CreateClient();
+
+        foreach (string route in new[] { "/", "/my-orders", "/order-management" })
+        {
+            var page = await client.GetAsync(route);
+            Assert.Equal(HttpStatusCode.OK, page.StatusCode);
+            Assert.Equal(html, await page.Content.ReadAsStringAsync());
+        }
+
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/does-not-exist")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/assets/missing.js")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/MenuItem")).StatusCode);
+    }
+
     // What a browser sends before a cross-origin call that carries an Authorization header
     private static HttpRequestMessage Preflight(string origin)
     {

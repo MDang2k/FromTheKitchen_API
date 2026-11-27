@@ -5,7 +5,8 @@ const TOKEN_KEY = "token";
 
 export const formatPrice = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format;
 export const formatDate = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format;
-export const imageUrl = (item: MenuItem) => `${API_BASE_URL}/${item.image}`;
+// Seeded items store "/images/x.jpg", uploads store "images/x.jpg".
+export const imageUrl = (item: MenuItem) => `${API_BASE_URL}/${item.image.replace(/^\/+/, "")}`;
 
 export interface AuthUser {
   id: string;

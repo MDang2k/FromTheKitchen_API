@@ -92,6 +92,20 @@ app.UseAuthorization();
 app.MapControllers();
 app.MapHealthChecks("/health");
 
+// The React app (copied into wwwroot by the deploy) owns routes like /cart and /my-orders,
+// so a refresh or a shared link on those gets index.html. Unknown /api paths and missing files stay 404.
+app.MapFallback(async context =>
+{
+    var index = app.Environment.WebRootFileProvider.GetFileInfo("index.html");
+    if (!index.Exists || context.Request.Path.StartsWithSegments("/api") || Path.HasExtension(context.Request.Path.Value))
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+    context.Response.ContentType = "text/html; charset=utf-8";
+    await context.Response.SendFileAsync(index);
+});
+
 app.Run();
 
 
