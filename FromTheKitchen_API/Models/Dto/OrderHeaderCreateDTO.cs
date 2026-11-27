@@ -11,10 +11,7 @@ namespace FromTheKitchen_API.Models.Dto
         public string PhoneNumber { get; set; } = string.Empty;
         [Required]
         public string PickUpEmail { get; set; } = string.Empty;
-        public string ApplicationUserId { get; set; } = string.Empty;
-        public double OrderTotal { get; set; }
-        public int TotalItem { get; set; }
-
-        public List<OrderDetail> OrderDetailsDTO { get; set; } = new List<OrderDetail>();
+        // User, totals and prices are set on the server from the token and the menu.
+        public List<OrderDetailsCreateDTO> OrderDetailsDTO { get; set; } = new List<OrderDetailsCreateDTO>();
     }
 }

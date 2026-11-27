@@ -9,9 +9,6 @@ namespace FromTheKitchen_API.Models.Dto
         public int MenuItemId { get; set; }
         [Required]
         public int Quantity { get; set; }
-        [Required]
-        public string ItemName { get; set; } = string.Empty;
-        [Required]
-        public double Price { get; set; }
+        // Name and price are looked up on the server, so the client can't set them.
     }
 }

@@ -1,12 +1,15 @@
-# From The Kitchen API
+# From The Kitchen
 
 [![CI/CD](https://github.com/MDang2k/FromTheKitchen_API/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/MDang2k/FromTheKitchen_API/actions/workflows/ci-cd.yml)
+[![Web](https://github.com/MDang2k/FromTheKitchen_API/actions/workflows/web.yml/badge.svg)](https://github.com/MDang2k/FromTheKitchen_API/actions/workflows/web.yml)
 
-Backend for **From The Kitchen**, a small restaurant ordering app. Customers browse a menu, place pickup orders, and track them. Admins manage the menu.
+**From The Kitchen** is a small restaurant ordering app. Customers browse a menu, place pickup orders, and track them. Admins manage the menu.
 
 This is a personal project. I built it to practise backend development with C# and ASP.NET Core: REST API design, Entity Framework Core, ASP.NET Core Identity, JWT authentication and role-based authorization.
 
-The frontend is a separate project (React 19 + TypeScript + Vite + Tailwind CSS) in the sibling `FromTheKitchen` folder. It calls this API.
+This repository holds both halves:
+- **`FromTheKitchen_API/`**: the ASP.NET Core API described below.
+- **`FromTheKitchen_Web/`**: the React 19 + TypeScript + Vite + Tailwind CSS frontend that calls it. Customers browse the menu, keep a cart, check out and track their orders; admins manage orders and the menu.
 
 ## Tech stack
 
@@ -30,10 +33,14 @@ The frontend is a separate project (React 19 + TypeScript + Vite + Tailwind CSS)
 
 ### Menu
 - The database is seeded with 10 dishes (appetizers, salads, entrees, desserts, beverages), each with a price, a category, an optional tag such as "Best Seller" or "Chef's Special", and an image.
-- Menu items are created and updated with `multipart/form-data`, so the image file is uploaded in the same request. It's saved to the folder in `ImageStorage:Path` (default `wwwroot/images`) and served at `/images/<file name>`. Only the file name is kept, so a name like `../../x.jpg` can't write outside the folder.
+- Menu items are created and updated with `multipart/form-data`, so the image file is uploaded in the same request. It's saved to the folder in `ImageStorage:Path` (default `wwwroot/images`) and served at `/images/<file name>`.
+- Uploads are saved under a new random name, so two files called `pizza.jpg` never overwrite each other and a name like `../../x.jpg` can't write outside the folder. Only JPG, PNG, WebP and GIF files up to 5 MB are accepted, because images are served from the API's own origin.
+- Updating an item without a file keeps its image. Sending a new file replaces it and deletes the old one.
+- An item that appears in past orders can't be deleted (409), because the order lines' foreign key cascades and would erase order history. Edit it instead.
 
 ### Orders
 - An order is an `OrderHeader` (pickup name, phone, email, user, total, item count, status, date) with a list of `OrderDetail` lines (menu item, quantity, name and price at time of order).
+- To place an order the client sends only menu item ids and quantities. The server looks up names and prices and works out the total, so nobody can set their own price. Empty orders, unknown items and quantities below 1 are rejected. The header and its lines are saved in one transaction.
 - Orders can be listed (newest first) or fetched one by one with their lines and menu items.
 - Pickup details (name, phone, email) can be updated. Only fields that are sent are changed.
 - Status follows a simple workflow. New orders start as `Confirmed`, then move to `Ready For Pick Up`, then `Completed`. An order can be `Cancelled` until it is completed. Any other change, such as skipping a step or reopening a cancelled order, returns 400 and saves nothing.
@@ -68,8 +75,8 @@ Every endpoint except the test ones wraps its result in the same `ApiResponse` s
 | GET | `/api/MenuItem` | – | List all menu items |
 | GET | `/api/MenuItem/{id}` | – | Get one menu item |
 | POST | `/api/MenuItem` | Admin | Create a menu item with an image (form-data) |
-| PUT | `/api/MenuItem?id={id}` | Admin | Update a menu item and replace its image (form-data) |
-| DELETE | `/api/MenuItem?id={id}` | Admin | Delete a menu item and its image |
+| PUT | `/api/MenuItem?id={id}` | Admin | Update a menu item, optionally replacing its image (form-data) |
+| DELETE | `/api/MenuItem?id={id}` | Admin | Delete a menu item and its image (409 if it was ever ordered) |
 | GET | `/api/OrderHeader?userId={id}` | Logged in | List orders: customers get their own, admins get all or one user's |
 | GET | `/api/OrderHeader/{orderId}` | Owner or Admin | Get one order |
 | POST | `/api/OrderHeader` | Logged in | Place an order for yourself |
@@ -84,28 +91,35 @@ In development the full interactive reference is at `/scalar/v1`, where you can 
 ## Project structure
 
 ```
-FromTheKitchen_API/
-├── .github/workflows/ci-cd.yml   # Test every push, deploy main to Azure
+├── .github/workflows/
+│   ├── ci-cd.yml               # API: test API changes, deploy main to Azure
+│   └── web.yml                 # Frontend: lint and build frontend changes
+├── FromTheKitchen_Web/         # React frontend (see "Running locally")
+│   └── src/
+│       ├── pages/              # Home, auth, cart/checkout, orders, admin pages
+│       ├── components/         # Header, footer, route guard, shared UI
+│       ├── store/cart.ts       # Cart kept in localStorage
+│       └── utility/            # API client, token helpers, routes and types
 ├── FromTheKitchen_API.slnx
-└── FromTheKitchen_API/
-    ├── Program.cs              # Services, CORS, health check; migrates the DB and seeds the Admin at startup
-    ├── appsettings.json        # Connection string (the JWT secret lives in user secrets)
-    ├── Controllers/
-    │   ├── AuthController.cs       # Register / login, issues JWTs
-    │   ├── MenuItemController.cs   # Menu CRUD and image upload
-    │   ├── OrderHeaderController.cs  # Place, list, update orders
-    │   ├── OrderDetailsController.cs # Rate order items
-    │   └── AuthTestController.cs   # Endpoints for testing auth and roles
-    ├── Data/
-    │   ├── ApplicationDbContext.cs # DbSets and menu seed data
-    │   └── AdminSeeder.cs          # Roles and the first Admin from config
-    ├── Models/
-    │   ├── ApplicationUser.cs, MenuItem.cs, OrderHeader.cs, OrderDetail.cs
-    │   ├── ApiResponse.cs          # Shared response wrapper
-    │   └── Dto/                    # Request/response DTOs
-    ├── Migrations/             # EF Core migrations (Identity, menu, seed, orders, ratings)
-    ├── Utility/SD.cs           # Role names and order status constants
-    └── wwwroot/images/         # Menu item images
+├── FromTheKitchen_API/
+│   ├── Program.cs              # Services, CORS, health check; migrates the DB and seeds the Admin at startup
+│   ├── appsettings.json        # Connection string (the JWT secret lives in user secrets)
+│   ├── Controllers/
+│   │   ├── AuthController.cs       # Register / login, issues JWTs
+│   │   ├── MenuItemController.cs   # Menu CRUD and image upload
+│   │   ├── OrderHeaderController.cs  # Place, list, update orders
+│   │   ├── OrderDetailsController.cs # Rate order items
+│   │   └── AuthTestController.cs   # Endpoints for testing auth and roles
+│   ├── Data/
+│   │   ├── ApplicationDbContext.cs # DbSets and menu seed data
+│   │   └── AdminSeeder.cs          # Roles and the first Admin from config
+│   ├── Models/
+│   │   ├── ApplicationUser.cs, MenuItem.cs, OrderHeader.cs, OrderDetail.cs
+│   │   ├── ApiResponse.cs          # Shared response wrapper
+│   │   └── Dto/                    # Request/response DTOs
+│   ├── Migrations/             # EF Core migrations (Identity, menu, seed, orders, ratings)
+│   ├── Utility/SD.cs           # Role names and order status constants
+│   └── wwwroot/images/         # Menu item images
 └── FromTheKitchen_API.Tests/
     ├── Infrastructure/ApiFactory.cs  # Runs the real API in memory on SQLite
     ├── AuthTests.cs                  # Register, login, JWT, admin rules
@@ -135,7 +149,13 @@ FromTheKitchen_API/
    dotnet run --project FromTheKitchen_API --launch-profile https
    ```
 5. Open `https://localhost:7145/scalar/v1` to explore the API. Plain HTTP runs on `http://localhost:5077`.
-6. Start the frontend from the `FromTheKitchen` folder with `npm install` and `npm run dev`.
+6. Start the frontend in a second terminal:
+   ```bash
+   cd FromTheKitchen_Web
+   npm install
+   npm run dev
+   ```
+   It runs on `http://localhost:5173` and calls the API at `https://localhost:7145`. Set `VITE_API_URL` to point it somewhere else.
 
 ## Tests
 
@@ -143,7 +163,7 @@ FromTheKitchen_API/
 dotnet test
 ```
 
-49 integration tests run in about 5 seconds and need no setup: no SQL Server, no user secrets.
+58 integration tests run in about 7 seconds and need no setup: no SQL Server, no user secrets.
 
 **How they work.** Each test class starts the real API in memory with `WebApplicationFactory<Program>`, so requests go through the same `Program.cs`, routing, model binding, Identity and JWT validation as in production. Only two things are swapped:
 - SQL Server becomes a private SQLite in-memory database, created from the EF Core model, menu seed included.
@@ -157,7 +177,8 @@ Tests talk to the API over HTTP like a real client would. They register and log 
 | --- | --- |
 | Authentication | Register and log in, JWT claims and 7-day expiry, wrong password, weak password, tampered token |
 | Admin accounts | The first Admin is seeded from config (safe on restart, promotes an existing user only with the right password, fails fast on a weak password), nobody can self-register as Admin, Admins can create Admins |
-| Menu | Public reads, 400 and 404 for bad ids, customers can't change the menu, Admin create, update and delete including the image file and serving it, upload names cannot escape the images folder |
+| Menu | Public reads, 400 and 404 for bad ids, customers can't change the menu, Admin create, update (with or without a new image) and delete including the image file and serving it, unique upload names, only image types accepted, ordered items can't be deleted |
+| Order pricing | Prices, names and totals come from the menu even when the request sends others; unknown items and quantities below 1 are rejected |
 | Order ownership | The owner comes from the token not the body, customers see only their own orders, admins see all, 403 for someone else's order |
 | Status workflow | One data-driven test covering every allowed and blocked change. A blocked change returns 400 and saves nothing. |
 | Hosting | `/health` answers, the frontend origin gets CORS permission, other origins don't |
@@ -167,7 +188,7 @@ Tests talk to the API over HTTP like a real client would. They register and log 
 
 ## Deploying (Azure)
 
-The API runs on **Azure App Service** (Linux) with an **Azure SQL Database**. [GitHub Actions](.github/workflows/ci-cd.yml) runs the tests on every push and pull request. Pushes to `main` then publish and deploy to App Service.
+The API runs on **Azure App Service** (Linux) with an **Azure SQL Database**. [GitHub Actions](.github/workflows/ci-cd.yml) runs the tests on every push and pull request that changes the API. Pushes to `main` that change the API then publish and deploy to App Service. Frontend changes run [their own workflow](.github/workflows/web.yml), which lints and builds but doesn't deploy yet.
 
 The app sets itself up on startup: it applies migrations to the empty database, seeds the menu, and creates the first Admin from settings. No manual database step is needed.
 
@@ -209,5 +230,5 @@ Once the Admin exists you can delete `SeedAdmin__Password`; the seeder skips whe
 
 This is a learning project, still in progress:
 
-- **Order totals come from the client:** `OrderTotal`, `TotalItem` and line prices are taken from the request as sent. They should be worked out on the server from the menu prices.
-- **Ideas:** payments, deploying the frontend (Azure Static Web Apps), and running the tests against real SQL Server with Testcontainers.
+- **Retiring dishes:** items that were ordered can't be deleted. An "available" flag on `MenuItem` (or a nullable `OrderDetail.MenuItemId`) would let admins hide them.
+- **Ideas:** payments, deploying the frontend (Azure Static Web Apps, or serving its build from the API's `wwwroot`), and running the tests against real SQL Server with Testcontainers.

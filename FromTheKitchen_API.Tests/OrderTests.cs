@@ -36,6 +36,51 @@ public class OrderTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task Prices_and_totals_come_from_the_menu_not_the_request()
+    {
+        var alice = await factory.CreateCustomerAsync();
+        var cheat = new
+        {
+            pickUpName = "Test Customer",
+            phoneNumber = "555-0100",
+            pickUpEmail = "customer@example.test",
+            orderTotal = 0.01,
+            totalItem = 1,
+            orderDetailsDTO = new[] { new { menuItemId = 1, quantity = 3, itemName = "Free food", price = 0.01 } },
+        };
+
+        var response = await factory.ClientFor(alice).PostAsJsonAsync("/api/OrderHeader", cheat);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var order = await GetOrderAsync(alice, (await response.ReadEnvelopeAsync<OrderHeader>()).Result!.OrderHeaderId);
+        var line = Assert.Single(order.OrderDetails);
+        Assert.Equal(line.MenuItem!.Price, line.Price);
+        Assert.Equal(line.MenuItem.Name, line.ItemName);
+        Assert.Equal(line.MenuItem.Price * 3, order.OrderTotal, 2);
+        Assert.Equal(3, order.TotalItem);
+    }
+
+    [Theory]
+    [InlineData(1, 2, HttpStatusCode.Created)] // ids and quantities are all the client needs to send
+    [InlineData(999, 1, HttpStatusCode.BadRequest)]
+    [InlineData(1, 0, HttpStatusCode.BadRequest)]
+    public async Task Order_lines_need_a_known_item_and_a_positive_quantity(int menuItemId, int quantity, HttpStatusCode expected)
+    {
+        var alice = await factory.CreateCustomerAsync();
+        var order = new
+        {
+            pickUpName = "Test Customer",
+            phoneNumber = "555-0100",
+            pickUpEmail = "customer@example.test",
+            orderDetailsDTO = new[] { new { menuItemId, quantity } },
+        };
+
+        var response = await factory.ClientFor(alice).PostAsJsonAsync("/api/OrderHeader", order);
+
+        Assert.Equal(expected, response.StatusCode);
+    }
+
+    [Fact]
     public async Task An_order_is_returned_with_its_lines_and_menu_items()
     {
         var alice = await factory.CreateCustomerAsync();
