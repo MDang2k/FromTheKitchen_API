@@ -3,13 +3,15 @@
 [![CI/CD](https://github.com/MDang2k/FromTheKitchen_API/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/MDang2k/FromTheKitchen_API/actions/workflows/ci-cd.yml)
 [![Web](https://github.com/MDang2k/FromTheKitchen_API/actions/workflows/web.yml/badge.svg)](https://github.com/MDang2k/FromTheKitchen_API/actions/workflows/web.yml)
 
-**From The Kitchen** is a small restaurant ordering app. Customers browse a menu, place pickup orders, and track them. Admins manage the menu.
+**From The Kitchen** is a small restaurant ordering app. Customers browse a menu, place pickup orders and track them. Admins manage the menu and move orders through to pickup.
 
-This is a personal project. I built it to practise backend development with C# and ASP.NET Core: REST API design, Entity Framework Core, ASP.NET Core Identity, JWT authentication and role-based authorization.
+**Live demo:** https://ftk-api-dang-a5hdhxc4a4c8asa5.italynorth-01.azurewebsites.net/. It runs on Azure's free tier, so the first visit after a quiet spell can take up to a minute while the app and database wake up.
+
+This is a personal project. I built it to practise backend development with C# and ASP.NET Core: REST API design, Entity Framework Core, ASP.NET Core Identity, JWT authentication, role-based authorization, integration testing and cloud deployment.
 
 This repository holds both halves:
-- **`FromTheKitchen_API/`**: the ASP.NET Core API described below.
-- **`FromTheKitchen_Web/`**: the React 19 + TypeScript + Vite + Tailwind CSS frontend that calls it. Customers browse the menu, keep a cart, check out and track their orders; admins manage orders and the menu.
+- **`FromTheKitchen_API/`**: the ASP.NET Core API described below. In production it also serves the frontend.
+- **`FromTheKitchen_Web/`**: the React frontend that calls it (see [Frontend](#frontend)).
 
 **Design docs:** the [data model (ER diagram)](docs/er-diagram.md), the [architecture decision records](docs/adr/README.md), and the [OpenAPI spec](docs/api/openapi.json), which is generated from the code and checked by a test. They're all indexed in [docs/](docs/README.md).
 
@@ -24,13 +26,16 @@ This repository holds both halves:
 | Authentication | JWT Bearer tokens (`System.IdentityModel.Tokens.Jwt`) |
 | API docs | Built-in OpenAPI document + [Scalar](https://github.com/scalar/scalar) UI |
 | File storage | Menu images saved to a configurable folder (`wwwroot/images` locally) and served as static files |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS 4, React Router 7 |
+| Tests | xUnit integration tests with `WebApplicationFactory` on SQLite in-memory |
+| Hosting | Azure App Service (Linux) and Azure SQL Database, deployed by GitHub Actions |
 
 ## What it does
 
 ### Authentication and roles
 - `POST /api/Auth/register` creates a user with ASP.NET Core Identity. New users are `Customer` by default. Asking for `Admin` only works when the request carries an Admin's JWT; otherwise it returns 403.
 - At startup the API applies pending migrations, creates the `Admin` and `Customer` roles, and creates the first Admin from the `SeedAdmin:Email` / `SeedAdmin:Password` settings if that account doesn't exist yet. An existing account with that email is only promoted if the password matches, so a stranger who registered the address first can't become Admin. A seed password that breaks Identity's rules stops startup with the reason.
-- `POST /api/Auth/login` checks the password and returns a JWT (valid 7 days) holding the user's id, email and role, plus the email and role in the response body.
+- `POST /api/Auth/login` checks the password and returns a JWT, valid for 7 days. The token holds the user's id, name, email and role, with Admin winning if a user has several roles. The email and role are also in the response body.
 - The API validates the token's signature and lifetime on every request that needs authorization. `[Authorize(Roles = "Admin")]` limits endpoints to admins.
 
 ### Menu
@@ -53,11 +58,27 @@ This repository holds both halves:
 - **Admins** see every order (optionally filtered with `?userId=`) and are the only ones who move an order to `Ready For Pick Up` or `Completed`.
 - Touching someone else's order returns 403.
 
-### Calls from the frontend
-Browsers only let the frontend call the API from origins listed in `Cors:AllowedOrigins`. In development that's `http://localhost:5173`, Vite's dev server.
+### Frontend
+
+A single-page React app in `FromTheKitchen_Web/`:
+
+| Page | Route | Who |
+| --- | --- | --- |
+| Home and menu, filtered by category, with add-to-cart | `/` | Anyone |
+| Log in / register | `/login`, `/register` | Anyone |
+| Cart (kept in `localStorage`) | `/cart` | Anyone |
+| Checkout (pickup details) and confirmation | `/checkout`, `/order-confirmation` | Logged in |
+| My orders: status and cancelling | `/my-orders` | Logged in |
+| Menu management: create, edit, delete dishes with images | `/menu-management` | Admin |
+| Order management: all orders, move them through the workflow | `/order-management` | Admin |
+
+- **Auth in the browser:** the JWT is kept in `localStorage` and sent as a Bearer header. A route guard sends logged-out users to the login page, then back afterwards, and shows customers an "Admins only" message on admin pages. That only hides pages: the API checks the token and role on every request anyway.
+- **API address:**
+  - **In production** the API serves the built app, so it calls `/api/...` on its own origin and needs no CORS.
+  - **In development** Vite runs on `http://localhost:5173` and calls `https://localhost:7145`. That origin is allowed in `Cors:AllowedOrigins` (`appsettings.Development.json`). `VITE_API_URL` overrides the API address.
 
 ### Consistent responses
-Every endpoint except the test ones wraps its result in the same `ApiResponse` shape, so the frontend handles every call the same way:
+Every endpoint except `/health` and the `AuthTest` ones wraps its result in the same `ApiResponse` shape, so the frontend handles every call the same way:
 
 ```json
 {
@@ -100,7 +121,8 @@ In development the full interactive reference is at `/scalar/v1`, where you can 
 │   ├── er-diagram.md           # Data model (Mermaid ER diagram)
 │   ├── adr/                    # Architecture decision records
 │   └── api/openapi.json        # OpenAPI spec, generated and checked by a test
-├── FromTheKitchen_Web/         # React frontend (see "Running locally")
+├── scripts/live-smoke.ps1      # End-to-end check against the deployed app
+├── FromTheKitchen_Web/         # React frontend (see "Frontend" and "Running locally")
 │   └── src/
 │       ├── pages/              # Home, auth, cart/checkout, orders, admin pages
 │       ├── components/         # Header, footer, route guard, shared UI
@@ -108,7 +130,7 @@ In development the full interactive reference is at `/scalar/v1`, where you can 
 │       └── utility/            # API client, token helpers, routes and types
 ├── FromTheKitchen_API.slnx
 ├── FromTheKitchen_API/
-│   ├── Program.cs              # Services, CORS, health check; migrates the DB and seeds the Admin at startup
+│   ├── Program.cs              # Services, CORS, health check, frontend fallback; migrates the DB and seeds the Admin at startup
 │   ├── appsettings.json        # Connection string (the JWT secret lives in user secrets)
 │   ├── Controllers/
 │   │   ├── AuthController.cs       # Register / login, issues JWTs
@@ -125,12 +147,12 @@ In development the full interactive reference is at `/scalar/v1`, where you can 
 │   │   └── Dto/                    # Request/response DTOs
 │   ├── Migrations/             # EF Core migrations (Identity, menu, seed, orders, ratings)
 │   ├── Utility/SD.cs           # Role names and order status constants
-│   └── wwwroot/images/         # Menu item images
+│   └── wwwroot/images/         # Seeded menu images (the deploy adds the built frontend to wwwroot)
 └── FromTheKitchen_API.Tests/
     ├── Infrastructure/ApiFactory.cs  # Runs the real API in memory on SQLite
     ├── AuthTests.cs                  # Register, login, JWT, admin rules
     ├── AdminSeederTests.cs           # First Admin from config
-    ├── HostingTests.cs               # /health and CORS
+    ├── HostingTests.cs               # /health, CORS, frontend fallback routes
     ├── MenuItemTests.cs              # Public menu, admin-only changes, image upload
     ├── OrderTests.cs                 # Ownership, status workflow, ratings
     └── OpenApiDocumentTests.cs       # docs/api/openapi.json matches the code
@@ -146,7 +168,7 @@ In development the full interactive reference is at `/scalar/v1`, where you can 
    dotnet user-secrets set "ApiSettings:Secret" "<random key, at least 32 bytes>" --project FromTheKitchen_API
    ```
    The API refuses to start without it. Outside development, set the `ApiSettings__Secret` environment variable instead.
-3. Choose the first Admin account. The API creates it at startup (the password must meet Identity's rules: 6+ characters with upper case, lower case, a digit and a symbol):
+3. Optional: choose an Admin account, which you need for the admin pages. The API creates it at startup. The password must meet Identity's rules: 6+ characters with upper case, lower case, a digit and a symbol.
    ```bash
    dotnet user-secrets set "SeedAdmin:Email" "<admin email>" --project FromTheKitchen_API
    dotnet user-secrets set "SeedAdmin:Password" "<admin password>" --project FromTheKitchen_API
@@ -170,11 +192,11 @@ In development the full interactive reference is at `/scalar/v1`, where you can 
 dotnet test
 ```
 
-59 integration tests run in about 7 seconds and need no setup: no SQL Server, no user secrets.
+60 integration tests run in about 5 seconds and need no setup: no SQL Server, no user secrets.
 
 **How they work.** Each test class starts the real API in memory with `WebApplicationFactory<Program>`, so requests go through the same `Program.cs`, routing, model binding, Identity and JWT validation as in production. Only two things are swapped:
 - SQL Server becomes a private SQLite in-memory database, created from the EF Core model, menu seed included.
-- The web root becomes a temporary folder, so uploaded test images never touch `wwwroot`.
+- The web root and the upload folder become temporary folders, so test images never touch `wwwroot`.
 
 Tests talk to the API over HTTP like a real client would. They register and log in real users and send real JWTs.
 
@@ -188,7 +210,7 @@ Tests talk to the API over HTTP like a real client would. They register and log 
 | Order pricing | Prices, names and totals come from the menu even when the request sends others; unknown items and quantities below 1 are rejected |
 | Order ownership | The owner comes from the token not the body, customers see only their own orders, admins see all, 403 for someone else's order |
 | Status workflow | One data-driven test covering every allowed and blocked change. A blocked change returns 400 and saves nothing. |
-| Hosting | `/health` answers, the frontend origin gets CORS permission, other origins don't |
+| Hosting | `/health` answers, the frontend origin gets CORS permission and other origins don't, frontend routes get `index.html` while unknown `/api` paths and missing files stay 404 |
 | Ratings | Only the customer who placed the order can rate it, not other customers and not admins |
 | API spec | The committed `docs/api/openapi.json` matches the OpenAPI document the API generates |
 
@@ -238,7 +260,20 @@ Once the Admin exists you can delete `SeedAdmin__Password`; the seeder skips whe
 
 ## Status and next steps
 
-This is a learning project, still in progress:
+This is a learning project, still in progress.
 
+**Working today:**
+- The full ordering flow, end to end, live on Azure.
+- 60 integration tests in CI.
+- An end-to-end smoke test (`scripts/live-smoke.ps1`) that passes against the live deployment.
+- Design docs in [docs/](docs/README.md).
+
+**Known gaps and next steps:**
+- **Rating in the UI:** the API supports rating order items, but the frontend doesn't offer it yet.
 - **Retiring dishes:** items that were ordered can't be deleted. An "available" flag on `MenuItem` (or a nullable `OrderDetail.MenuItemId`) would let admins hide them.
-- **Ideas:** payments, a CDN in front of the static files, and running the tests against real SQL Server with Testcontainers.
+- **Schema hardening:**
+  - Prices are stored as `float`; `decimal(10,2)` would avoid rounding errors.
+  - `OrderDetails.MenuItemId` should use `ON DELETE RESTRICT` instead of cascade.
+  - See the [data model notes](docs/er-diagram.md#notes).
+- **Response types in the API spec:** `ApiResponse.result` is typed `object`, so the OpenAPI spec doesn't describe what each endpoint returns. Generic `ApiResponse<T>` types would fix that ([ADR 0008](docs/adr/0008-uniform-api-response-envelope.md)).
+- **Ideas:** payments, a CDN in front of the static files, OIDC instead of a publish profile for deploys, and running the tests against real SQL Server with Testcontainers.
